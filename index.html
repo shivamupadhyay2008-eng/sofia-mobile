@@ -66,6 +66,13 @@
             websocket.onopen = () => {
                 statusEl.innerText = "Neural Link Established";
                 if(navigator.vibrate) navigator.vibrate([50, 50, 50]); // Haptic feedback on connection
+                
+                // THE HEARTBEAT PING: Keeps mobile browsers from killing the socket
+                setInterval(() => {
+                    if(websocket && websocket.readyState === WebSocket.OPEN) {
+                        websocket.send("[PING]");
+                    }
+                }, 20000);
             };
             
             websocket.onmessage = (event) => {
