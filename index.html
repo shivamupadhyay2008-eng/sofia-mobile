@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sofia | Phantom Node</title>
+    <style>
+        body {
+            background-color: #050505;
+            color: #00ffff;
+            font-family: 'Courier New', Courier, monospace;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }
+        #matrix-ring {
+            width: 200px;
+            height: 200px;
+            border: 2px solid #00ffff;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 0 20px #00ffff;
+            transition: all 0.3s ease;
+        }
+        .listening {
+            box-shadow: 0 0 50px #00ffff, inset 0 0 30px #00ffff !important;
+            transform: scale(1.05);
+        }
+        #status { margin-top: 30px; font-size: 1.2rem; text-transform: uppercase; letter-spacing: 2px; }
+        #transcript { margin-top: 20px; color: #aaaaaa; font-size: 0.9rem; text-align: center; max-width: 80%; height: 60px; }
+        .mic-btn { background: transparent; color: #00ffff; border: 1px solid #00ffff; padding: 15px 30px; font-size: 1rem; text-transform: uppercase; margin-top: 40px; cursor: pointer; letter-spacing: 1px; }
+        .mic-btn:hover { background: rgba(0, 255, 255, 0.1); }
+    </style>
+</head>
+<body>
+
+    <div id="matrix-ring">
+        <h2 id="core-text">SOFIA</h2>
+    </div>
+    
+    <div id="status">System Standby</div>
+    <div id="transcript">Awaiting neural link...</div>
+    
+    <button class="mic-btn" onclick="startListening()">Engage Audio Matrix</button>
+
+    <script>
+        const CLOUD_URL = "wss://sofia-mainframe.onrender.com/ws/sofia";
+        let websocket;
+        let recognition;
+        
+        const statusEl = document.getElementById('status');
+        const transcriptEl = document.getElementById('transcript');
+        const ringEl = document.getElementById('matrix-ring');
+        const coreText = document.getElementById('core-text');
+
+        function connectToBrain() {
+            statusEl.innerText = "Connecting to Cloud...";
+            websocket = new WebSocket(CLOUD_URL);
+            
+            websocket.onopen = () => {
+                statusEl.innerText = "Neural Link Established";
+                if(navigator.vibrate) navigator.vibrate([50, 50, 50]); // Haptic feedback on connection
+            };
+            
+            websocket.onmessage = (event) => {
+                let responseText = event.data;
+                
+                // HARDWARE INTERCEPTOR: Check for execution tags
+                if (responseText.includes("[EXECUTE:")) {
+                    executeCommand(responseText);
+                    responseText = responseText.replace(/\[EXECUTE:.*?\]/g, ""); // Strip tag so she doesn't speak it
+                }
+                
+                transcriptEl.innerText = "SOFIA: " + responseText.trim();
+                if(responseText.trim().length > 0) {
+                    speakResponse(responseText.trim());
+                } else {
+                    startListening(); // Re-engage if she only sent a silent command
+                }
+            };
+            
+            websocket.onclose = () => {
+                statusEl.innerText = "Connection Lost. Retrying...";
+                setTimeout(connectToBrain, 3000);
+            };
+        }
+
+        // --- THE J.A.R.V.I.S. ACTUATORS ---
+        function executeCommand(text) {
+            if(navigator.vibrate) navigator.vibrate(100); // Haptic acknowledgment
+
+            if (text.includes("[EXECUTE: YOUTUBE]")) {
+                statusEl.innerText = "Launching YouTube...";
+                window.location.href = "vnd.youtube://"; // Tries to open native app
+                setTimeout(() => window.open("https://youtube.com", "_blank"), 500); // Fallback to browser
+            }
+            else if (text.includes("[EXECUTE: MAPS]")) {
+                statusEl.innerText = "Launching Maps...";
+                window.open("https://maps.google.com", "_blank");
+            }
+            else if (text.includes("[EXECUTE: SEARCH]")) {
+                // Extract query, e.g., [EXECUTE: SEARCH quantum physics]
+                let match = text.match(/\[EXECUTE: SEARCH (.*?)\]/);
+                if(match && match[1]) {
+                    window.open(`https://google.com/search?q=${encodeURIComponent(match[1])}`, "_blank");
+                }
+            }
+        }
+
+        // --- SYSTEM TELEMETRY (Battery) ---
+        async function getBatteryStatus() {
+            if ('getBattery' in navigator) {
+                let battery = await navigator.getBattery();
+                let level = Math.round(battery.level * 100);
+                let charging = battery.charging ? "charging" : "discharging";
+                return `My battery is at ${level} percent and is currently ${charging}.`;
+            }
+            return "I do not have access to the battery telemetry on this device.";
+        }
+
+        function speakResponse(text) {
+            const utterance = new SpeechSynthesisUtterance(text);
+            const voices = window.speechSynthesis.getVoices();
+            const femaleVoice = voices.find(v => v.name.toLowerCase().includes('female') || v.name.toLowerCase().includes('zira') || v.name.toLowerCase().includes('samantha'));
+            
+            if(femaleVoice) utterance.voice = femaleVoice;
+            utterance.rate = 1.05;
+            utterance.pitch = 1.1; 
+            
+            utterance.onend = () => {
+                startListening();
+            };
+            
+            window.speechSynthesis.speak(utterance);
+        }
+
+        function initSpeech() {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (!SpeechRecognition) return null;
+            
+            const rec = new SpeechRecognition();
+            rec.continuous = false;
+            rec.interimResults = false;
+            
+            rec.onstart = () => {
+                ringEl.classList.add('listening');
+                statusEl.innerText = "Matrix Listening...";
+                transcriptEl.innerText = "Speak your command...";
+            };
+            
+            rec.onresult = async (event) => {
+                const command = event.results[0][0].transcript.toLowerCase();
+                transcriptEl.innerText = "YOU: " + command;
+                statusEl.innerText = "Transmitting to Cloud...";
+                ringEl.classList.remove('listening');
+                
+                // INTERCEPT TELEMETRY REQUESTS LOCALLY
+                if (command.includes("battery") || command.includes("power level")) {
+                    let batStat = await getBatteryStatus();
+                    transcriptEl.innerText = "SOFIA: " + batStat;
+                    speakResponse(batStat);
+                    return; // Don't send to cloud, handle it instantly on the phone
+                }
+                
+                if(websocket && websocket.readyState === WebSocket.OPEN) {
+                    websocket.send(command);
+                }
+            };
+            
+            rec.onerror = () => {
+                ringEl.classList.remove('listening');
+                statusEl.innerText = "Standing By";
+            };
+            
+            return rec;
+        }
+
+        function startListening() {
+            if(!recognition) recognition = initSpeech();
+            if(recognition) {
+                try { recognition.start(); } catch(e) {} 
+            }
+        }
+
+        window.onload = () => {
+            window.speechSynthesis.getVoices();
+            connectToBrain();
+        };
+    </script>
+</body>
+</html>
