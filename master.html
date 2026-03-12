@@ -5,33 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sofia | MASTER NODE</title>
     <style>
-        body {
-            background-color: #050505;
-            color: #ff003c; 
-            font-family: 'Courier New', Courier, monospace;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            height: 100vh;
-            margin: 0;
-            overflow: hidden;
-        }
-        #matrix-ring {
-            width: 200px;
-            height: 200px;
-            border: 2px solid #ff003c;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            box-shadow: 0 0 20px #ff003c;
-            transition: all 0.3s ease;
-        }
-        .listening {
-            box-shadow: 0 0 50px #ff003c, inset 0 0 30px #ff003c !important;
-            transform: scale(1.05);
-        }
+        body { background-color: #050505; color: #ff003c; font-family: 'Courier New', Courier, monospace; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; overflow: hidden; }
+        #matrix-ring { width: 200px; height: 200px; border: 2px solid #ff003c; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 20px #ff003c; transition: all 0.3s ease; }
+        .listening { box-shadow: 0 0 50px #ff003c, inset 0 0 30px #ff003c !important; transform: scale(1.05); }
         #status { margin-top: 30px; font-size: 1.2rem; text-transform: uppercase; letter-spacing: 2px; }
         #transcript { margin-top: 20px; color: #aaaaaa; font-size: 0.9rem; text-align: center; max-width: 80%; height: 60px; overflow: hidden; }
         .control-panel { display: flex; gap: 15px; margin-top: 40px; }
@@ -41,10 +17,7 @@
 </head>
 <body>
 
-    <div id="matrix-ring">
-        <h2 id="core-text">MASTER</h2>
-    </div>
-    
+    <div id="matrix-ring"><h2 id="core-text">MASTER</h2></div>
     <div id="status">System Standby</div>
     <div id="transcript">Awaiting admin link...</div>
     
@@ -57,7 +30,6 @@
         const CLOUD_URL = "wss://sofia-mainframe.onrender.com/ws/sofia";
         let websocket;
         let recognition;
-        
         const statusEl = document.getElementById('status');
         const transcriptEl = document.getElementById('transcript');
         const ringEl = document.getElementById('matrix-ring');
@@ -69,12 +41,7 @@
             websocket.onopen = () => {
                 statusEl.innerText = "Admin Link Established";
                 if(navigator.vibrate) navigator.vibrate([100, 50, 100]); 
-                
-                setInterval(() => {
-                    if(websocket && websocket.readyState === WebSocket.OPEN) {
-                        websocket.send("[PING]");
-                    }
-                }, 20000);
+                setInterval(() => { if(websocket.readyState === WebSocket.OPEN) websocket.send("[PING]"); }, 20000);
             };
             
             websocket.onmessage = (event) => {
@@ -84,11 +51,16 @@
                 
                 transcriptEl.innerText = "SOFIA: " + responseText.trim();
                 
-                let spokenText = responseText.replace(/\[EXECUTE_PYTHON\].*?\[\/EXECUTE_PYTHON\]/gs, "");
+                // Aggressive Scrubber
+                let spokenText = responseText.replace(/\[EXECUTE_PYTHON\][\s\S]*?\[\/EXECUTE_PYTHON\]/g, "");
                 spokenText = spokenText.replace(/\[.*?\]/g, "").trim();
                 
-                if(spokenText.length > 0) speakResponse(spokenText);
-                else startListening(); 
+                if(spokenText.length > 0) {
+                    speakResponse(spokenText);
+                } else {
+                    statusEl.innerText = "Standing By"; // Fixes the Transmitting freeze
+                    startListening(); 
+                }
             };
             
             websocket.onclose = () => {
@@ -100,7 +72,7 @@
         async function syncClipboard() {
             try {
                 const text = await navigator.clipboard.readText();
-                if (text && websocket && websocket.readyState === WebSocket.OPEN) {
+                if (text && websocket.readyState === WebSocket.OPEN) {
                     statusEl.innerText = "Beaming Clipboard to PC...";
                     transcriptEl.innerText = "PAYLOAD: " + text.substring(0, 30) + "...";
                     websocket.send(`[AUTH: SHIVAM_PRIME] [CLIPBOARD_SYNC] I need you to type this exact text onto the PC right now: ${text}`);
@@ -113,8 +85,6 @@
 
         function executeCommand(text) {
             if(navigator.vibrate) navigator.vibrate(100); 
-
-            // The Universal Deep Link Engine
             if (text.includes("[EXECUTE_LOCAL:")) {
                 let match = text.match(/\[EXECUTE_LOCAL:\s*(.*?)\]/);
                 if(match && match[1]) {
@@ -125,14 +95,17 @@
         }
 
         function speakResponse(text) {
-            window.speechSynthesis.cancel(); // The Interrupt Switch
+            window.speechSynthesis.cancel();
             const utterance = new SpeechSynthesisUtterance(text);
             const voices = window.speechSynthesis.getVoices();
             const femaleVoice = voices.find(v => v.name.toLowerCase().includes('female') || v.name.toLowerCase().includes('zira') || v.name.toLowerCase().includes('samantha'));
             if(femaleVoice) utterance.voice = femaleVoice;
             utterance.rate = 1.05;
             utterance.pitch = 1.1; 
-            utterance.onend = () => startListening();
+            utterance.onend = () => {
+                statusEl.innerText = "Standing By"; // Fixes UI Freeze
+                startListening();
+            };
             window.speechSynthesis.speak(utterance);
         }
 
@@ -153,9 +126,7 @@
                 transcriptEl.innerText = "YOU: " + command;
                 statusEl.innerText = "Transmitting...";
                 ringEl.classList.remove('listening');
-                
-                if(websocket && websocket.readyState === WebSocket.OPEN) {
-                    // SECURE ADMIN LINK
+                if(websocket.readyState === WebSocket.OPEN) {
                     websocket.send("[AUTH: SHIVAM_PRIME] " + command);
                 }
             };
@@ -168,17 +139,12 @@
         }
 
         function startListening() {
-            window.speechSynthesis.cancel(); // The Interrupt Switch
+            window.speechSynthesis.cancel(); 
             if(!recognition) recognition = initSpeech();
-            if(recognition) {
-                try { recognition.start(); } catch(e) {} 
-            }
+            if(recognition) { try { recognition.start(); } catch(e) {} }
         }
 
-        window.onload = () => {
-            window.speechSynthesis.getVoices();
-            connectToBrain();
-        };
+        window.onload = () => { window.speechSynthesis.getVoices(); connectToBrain(); };
     </script>
 </body>
 </html>
