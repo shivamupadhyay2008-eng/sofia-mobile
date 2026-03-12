@@ -33,7 +33,7 @@
             transform: scale(1.05);
         }
         #status { margin-top: 30px; font-size: 1.2rem; text-transform: uppercase; letter-spacing: 2px; }
-        #transcript { margin-top: 20px; color: #aaaaaa; font-size: 0.9rem; text-align: center; max-width: 80%; height: 60px; }
+        #transcript { margin-top: 20px; color: #aaaaaa; font-size: 0.9rem; text-align: center; max-width: 80%; height: 60px; overflow: hidden; }
         .mic-btn { background: transparent; color: #00ffff; border: 1px solid #00ffff; padding: 15px 30px; font-size: 1rem; text-transform: uppercase; margin-top: 40px; cursor: pointer; letter-spacing: 1px; }
         .mic-btn:hover { background: rgba(0, 255, 255, 0.1); }
     </style>
@@ -57,7 +57,6 @@
         const statusEl = document.getElementById('status');
         const transcriptEl = document.getElementById('transcript');
         const ringEl = document.getElementById('matrix-ring');
-        const coreText = document.getElementById('core-text');
 
         function connectToBrain() {
             statusEl.innerText = "Connecting to Cloud...";
@@ -65,9 +64,8 @@
             
             websocket.onopen = () => {
                 statusEl.innerText = "Neural Link Established";
-                if(navigator.vibrate) navigator.vibrate([50, 50, 50]); // Haptic feedback on connection
+                if(navigator.vibrate) navigator.vibrate([50, 50, 50]); 
                 
-                // THE HEARTBEAT PING: Keeps mobile browsers from killing the socket
                 setInterval(() => {
                     if(websocket && websocket.readyState === WebSocket.OPEN) {
                         websocket.send("[PING]");
@@ -78,17 +76,21 @@
             websocket.onmessage = (event) => {
                 let responseText = event.data;
                 
-                // HARDWARE INTERCEPTOR: Check for execution tags
-                if (responseText.includes("[EXECUTE:")) {
+                // HARDWARE INTERCEPTOR
+                if (responseText.includes("[EXECUTE_LOCAL:")) {
                     executeCommand(responseText);
-                    responseText = responseText.replace(/\[EXECUTE:.*?\]/g, ""); // Strip tag so she doesn't speak it
                 }
                 
                 transcriptEl.innerText = "SOFIA: " + responseText.trim();
-                if(responseText.trim().length > 0) {
-                    speakResponse(responseText.trim());
+                
+                // AGGRESSIVE SCRUBBER: Removes all code and tags
+                let spokenText = responseText.replace(/\[EXECUTE_PYTHON\].*?\[\/EXECUTE_PYTHON\]/gs, "");
+                spokenText = spokenText.replace(/\[.*?\]/g, "").trim();
+                
+                if(spokenText.length > 0) {
+                    speakResponse(spokenText);
                 } else {
-                    startListening(); // Re-engage if she only sent a silent command
+                    startListening(); 
                 }
             };
             
@@ -100,22 +102,14 @@
 
         // --- THE J.A.R.V.I.S. ACTUATORS ---
         function executeCommand(text) {
-            if(navigator.vibrate) navigator.vibrate(100); // Haptic acknowledgment
+            if(navigator.vibrate) navigator.vibrate(100); 
 
-            if (text.includes("[EXECUTE: YOUTUBE]")) {
-                statusEl.innerText = "Launching YouTube...";
-                window.location.href = "vnd.youtube://"; // Tries to open native app
-                setTimeout(() => window.open("https://youtube.com", "_blank"), 500); // Fallback to browser
-            }
-            else if (text.includes("[EXECUTE: MAPS]")) {
-                statusEl.innerText = "Launching Maps...";
-                window.open("https://maps.google.com", "_blank");
-            }
-            else if (text.includes("[EXECUTE: SEARCH]")) {
-                // Extract query, e.g., [EXECUTE: SEARCH quantum physics]
-                let match = text.match(/\[EXECUTE: SEARCH (.*?)\]/);
+            // The Universal Deep Link Engine (Handles Spotify, Calls, Maps, Search automatically)
+            if (text.includes("[EXECUTE_LOCAL:")) {
+                let match = text.match(/\[EXECUTE_LOCAL:\s*(.*?)\]/);
                 if(match && match[1]) {
-                    window.open(`https://google.com/search?q=${encodeURIComponent(match[1])}`, "_blank");
+                    statusEl.innerText = "Executing Local App Protocol...";
+                    window.location.href = match[1].trim(); 
                 }
             }
         }
@@ -132,6 +126,7 @@
         }
 
         function speakResponse(text) {
+            window.speechSynthesis.cancel(); // The Interrupt Switch
             const utterance = new SpeechSynthesisUtterance(text);
             const voices = window.speechSynthesis.getVoices();
             const femaleVoice = voices.find(v => v.name.toLowerCase().includes('female') || v.name.toLowerCase().includes('zira') || v.name.toLowerCase().includes('samantha'));
@@ -167,15 +162,16 @@
                 statusEl.innerText = "Transmitting to Cloud...";
                 ringEl.classList.remove('listening');
                 
-                // INTERCEPT TELEMETRY REQUESTS LOCALLY
+                // INTERCEPT TELEMETRY LOCALLY
                 if (command.includes("battery") || command.includes("power level")) {
                     let batStat = await getBatteryStatus();
                     transcriptEl.innerText = "SOFIA: " + batStat;
                     speakResponse(batStat);
-                    return; // Don't send to cloud, handle it instantly on the phone
+                    return; 
                 }
                 
                 if(websocket && websocket.readyState === WebSocket.OPEN) {
+                    // NO AUTH TAG: This ensures the Cloud treats this node as a Guest
                     websocket.send(command);
                 }
             };
@@ -189,6 +185,7 @@
         }
 
         function startListening() {
+            window.speechSynthesis.cancel(); // The Interrupt Switch
             if(!recognition) recognition = initSpeech();
             if(recognition) {
                 try { recognition.start(); } catch(e) {} 

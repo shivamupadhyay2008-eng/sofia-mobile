@@ -80,7 +80,7 @@
             websocket.onmessage = (event) => {
                 let responseText = event.data;
                 
-                if (responseText.includes("[EXECUTE:")) executeCommand(responseText);
+                if (responseText.includes("[EXECUTE_LOCAL:")) executeCommand(responseText);
                 
                 transcriptEl.innerText = "SOFIA: " + responseText.trim();
                 
@@ -97,7 +97,6 @@
             };
         }
 
-        // --- TELEPATHIC CLIPBOARD FUNCTION ---
         async function syncClipboard() {
             try {
                 const text = await navigator.clipboard.readText();
@@ -114,9 +113,14 @@
 
         function executeCommand(text) {
             if(navigator.vibrate) navigator.vibrate(100); 
-            if (text.includes("[EXECUTE: YOUTUBE]")) {
-                window.location.href = "vnd.youtube://"; 
-                setTimeout(() => window.open("https://youtube.com", "_blank"), 500); 
+
+            // The Universal Deep Link Engine
+            if (text.includes("[EXECUTE_LOCAL:")) {
+                let match = text.match(/\[EXECUTE_LOCAL:\s*(.*?)\]/);
+                if(match && match[1]) {
+                    statusEl.innerText = "Executing Local App Protocol...";
+                    window.location.href = match[1].trim(); 
+                }
             }
         }
 
@@ -124,7 +128,7 @@
             window.speechSynthesis.cancel(); // The Interrupt Switch
             const utterance = new SpeechSynthesisUtterance(text);
             const voices = window.speechSynthesis.getVoices();
-            const femaleVoice = voices.find(v => v.name.toLowerCase().includes('female') || v.name.toLowerCase().includes('zira'));
+            const femaleVoice = voices.find(v => v.name.toLowerCase().includes('female') || v.name.toLowerCase().includes('zira') || v.name.toLowerCase().includes('samantha'));
             if(femaleVoice) utterance.voice = femaleVoice;
             utterance.rate = 1.05;
             utterance.pitch = 1.1; 
@@ -151,6 +155,7 @@
                 ringEl.classList.remove('listening');
                 
                 if(websocket && websocket.readyState === WebSocket.OPEN) {
+                    // SECURE ADMIN LINK
                     websocket.send("[AUTH: SHIVAM_PRIME] " + command);
                 }
             };
