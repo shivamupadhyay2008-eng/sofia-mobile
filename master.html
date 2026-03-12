@@ -7,7 +7,7 @@
     <style>
         body {
             background-color: #050505;
-            color: #ff003c; /* Crimson Red for Master Admin */
+            color: #ff003c; 
             font-family: 'Courier New', Courier, monospace;
             display: flex;
             flex-direction: column;
@@ -33,7 +33,7 @@
             transform: scale(1.05);
         }
         #status { margin-top: 30px; font-size: 1.2rem; text-transform: uppercase; letter-spacing: 2px; }
-        #transcript { margin-top: 20px; color: #aaaaaa; font-size: 0.9rem; text-align: center; max-width: 80%; height: 60px; }
+        #transcript { margin-top: 20px; color: #aaaaaa; font-size: 0.9rem; text-align: center; max-width: 80%; height: 60px; overflow: hidden; }
         .mic-btn { background: transparent; color: #ff003c; border: 1px solid #ff003c; padding: 15px 30px; font-size: 1rem; text-transform: uppercase; margin-top: 40px; cursor: pointer; letter-spacing: 1px; }
         .mic-btn:hover { background: rgba(255, 0, 60, 0.1); }
     </style>
@@ -57,7 +57,6 @@
         const statusEl = document.getElementById('status');
         const transcriptEl = document.getElementById('transcript');
         const ringEl = document.getElementById('matrix-ring');
-        const coreText = document.getElementById('core-text');
 
         function connectToBrain() {
             statusEl.innerText = "Connecting to Cloud...";
@@ -65,9 +64,9 @@
             
             websocket.onopen = () => {
                 statusEl.innerText = "Admin Link Established";
-                if(navigator.vibrate) navigator.vibrate([100, 50, 100]); // Unique haptic pattern for master
+                if(navigator.vibrate) navigator.vibrate([100, 50, 100]); 
                 
-                // THE HEARTBEAT PING: Keeps mobile browsers from killing the socket
+                // Heartbeat Ping
                 setInterval(() => {
                     if(websocket && websocket.readyState === WebSocket.OPEN) {
                         websocket.send("[PING]");
@@ -78,16 +77,22 @@
             websocket.onmessage = (event) => {
                 let responseText = event.data;
                 
-                // HARDWARE INTERCEPTOR
+                // Local Hardware Interceptor (Phone-level actions)
                 if (responseText.includes("[EXECUTE:")) {
                     executeCommand(responseText);
-                    responseText = responseText.replace(/\[EXECUTE:.*?\]/g, ""); 
                 }
                 
+                // Display full response for debugging visually
                 transcriptEl.innerText = "SOFIA: " + responseText.trim();
-                if(responseText.trim().length > 0) {
-                    speakResponse(responseText.trim());
+                
+                // AGGRESSIVE SCRUBBER: Remove multi-line Python blocks first, then single-line tags
+                let spokenText = responseText.replace(/\[EXECUTE_PYTHON\].*?\[\/EXECUTE_PYTHON\]/gs, "");
+                spokenText = spokenText.replace(/\[.*?\]/g, "").trim();
+                
+                if(spokenText.length > 0) {
+                    speakResponse(spokenText);
                 } else {
+                    // If she only sent code, silently reset to listening
                     startListening(); 
                 }
             };
@@ -98,7 +103,6 @@
             };
         }
 
-        // --- THE J.A.R.V.I.S. ACTUATORS ---
         function executeCommand(text) {
             if(navigator.vibrate) navigator.vibrate(100); 
 
@@ -119,7 +123,6 @@
             }
         }
 
-        // --- SYSTEM TELEMETRY (Battery) ---
         async function getBatteryStatus() {
             if ('getBattery' in navigator) {
                 let battery = await navigator.getBattery();
@@ -127,10 +130,13 @@
                 let charging = battery.charging ? "charging" : "discharging";
                 return `My battery is at ${level} percent and is currently ${charging}.`;
             }
-            return "I do not have access to the battery telemetry on this device.";
+            return "Battery telemetry unavailable.";
         }
 
         function speakResponse(text) {
+            // THE INTERRUPT SWITCH: Instantly kill current speech
+            window.speechSynthesis.cancel();
+            
             const utterance = new SpeechSynthesisUtterance(text);
             const voices = window.speechSynthesis.getVoices();
             const femaleVoice = voices.find(v => v.name.toLowerCase().includes('female') || v.name.toLowerCase().includes('zira') || v.name.toLowerCase().includes('samantha'));
@@ -157,16 +163,15 @@
             rec.onstart = () => {
                 ringEl.classList.add('listening');
                 statusEl.innerText = "Master Mic Active...";
-                transcriptEl.innerText = "Speak your command, sir...";
+                transcriptEl.innerText = "Listening...";
             };
             
             rec.onresult = async (event) => {
                 const command = event.results[0][0].transcript.toLowerCase();
                 transcriptEl.innerText = "YOU: " + command;
-                statusEl.innerText = "Transmitting Override...";
+                statusEl.innerText = "Transmitting...";
                 ringEl.classList.remove('listening');
                 
-                // INTERCEPT TELEMETRY REQUESTS LOCALLY
                 if (command.includes("battery") || command.includes("power level")) {
                     let batStat = await getBatteryStatus();
                     transcriptEl.innerText = "SOFIA: " + batStat;
@@ -175,7 +180,6 @@
                 }
                 
                 if(websocket && websocket.readyState === WebSocket.OPEN) {
-                    // THE MASTER KEY: ONLY IN MASTER.HTML
                     websocket.send("[AUTH: SHIVAM_PRIME] " + command);
                 }
             };
@@ -189,6 +193,9 @@
         }
 
         function startListening() {
+            // THE INTERRUPT SWITCH: Flush audio buffer to take immediate commands
+            window.speechSynthesis.cancel(); 
+            
             if(!recognition) recognition = initSpeech();
             if(recognition) {
                 try { recognition.start(); } catch(e) {} 
