@@ -49,16 +49,26 @@
                 
                 if (responseText.includes("[EXECUTE_LOCAL:")) executeCommand(responseText);
                 
+                // --- THE SPATIAL AUDIO INTERCEPTOR ---
+                // If the server tells us the PC is handling the audio, mute the phone!
+                if (responseText.includes("[AUDIO_ROUTED]")) {
+                    let cleanText = responseText.replace("[AUDIO_ROUTED]", "").trim();
+                    transcriptEl.innerText = "SOFIA (PC AUDIO): " + cleanText;
+                    statusEl.innerText = "Standing By";
+                    startListening(); // Reset the mic, but DO NOT trigger phone speech
+                    return; // Exit function completely
+                }
+                
                 transcriptEl.innerText = "SOFIA: " + responseText.trim();
                 
-                // Aggressive Scrubber
+                // Aggressive Scrubber for standard phone replies
                 let spokenText = responseText.replace(/\[EXECUTE_PYTHON\][\s\S]*?\[\/EXECUTE_PYTHON\]/g, "");
                 spokenText = spokenText.replace(/\[.*?\]/g, "").trim();
                 
                 if(spokenText.length > 0) {
                     speakResponse(spokenText);
                 } else {
-                    statusEl.innerText = "Standing By"; // Fixes the Transmitting freeze
+                    statusEl.innerText = "Standing By"; 
                     startListening(); 
                 }
             };
@@ -75,7 +85,8 @@
                 if (text && websocket.readyState === WebSocket.OPEN) {
                     statusEl.innerText = "Beaming Clipboard to PC...";
                     transcriptEl.innerText = "PAYLOAD: " + text.substring(0, 30) + "...";
-                    websocket.send(`[AUTH: SHIVAM_PRIME] [CLIPBOARD_SYNC] I need you to type this exact text onto the PC right now: ${text}`);
+                    // HARDWIRED FIX: Removed the conversational prompt so the PC only copies the exact payload
+                    websocket.send(`[AUTH: SHIVAM_PRIME] [CLIPBOARD_SYNC] ${text}`);
                     if(navigator.vibrate) navigator.vibrate(50);
                 }
             } catch (err) {
@@ -103,7 +114,7 @@
             utterance.rate = 1.05;
             utterance.pitch = 1.1; 
             utterance.onend = () => {
-                statusEl.innerText = "Standing By"; // Fixes UI Freeze
+                statusEl.innerText = "Standing By"; 
                 startListening();
             };
             window.speechSynthesis.speak(utterance);
