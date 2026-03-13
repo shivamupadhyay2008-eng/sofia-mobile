@@ -37,6 +37,12 @@
                 statusEl.innerText = "Neural Link Established";
                 if(navigator.vibrate) navigator.vibrate([50, 50, 50]); 
                 setInterval(() => { if(websocket.readyState === WebSocket.OPEN) websocket.send("[PING]"); }, 20000);
+                
+                // --- THE GUEST WAKE PROTOCOL ---
+                setTimeout(() => {
+                    let currentTime = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                    websocket.send(`[WAKE_SEQUENCE] A Phantom Node has connected. The local time is ${currentTime}. Greet the guest dynamically based on the time, introduce yourself, and politely ask for their name so you know how to address them.`);
+                }, 1000);
             };
             
             websocket.onmessage = (event) => {
@@ -71,13 +77,7 @@
                 if(match && match[1]) {
                     let uri = match[1].trim();
                     statusEl.innerText = "Executing Local App Protocol...";
-                    
-                    // Fallback: If she hallucinates a raw 'www' link, force it to secure HTTPS so the phone accepts it.
-                    if (uri.startsWith('www.')) {
-                        uri = 'https://' + uri;
-                    }
-                    
-                    // Force the mobile OS to rip open the application
+                    if (uri.startsWith('www.')) uri = 'https://' + uri;
                     window.location.assign(uri); 
                 }
             }
