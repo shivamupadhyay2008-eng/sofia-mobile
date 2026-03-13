@@ -63,13 +63,22 @@
             };
         }
 
+        // --- THE UNIVERSAL MOBILE ACTUATOR ---
         function executeCommand(text) {
             if(navigator.vibrate) navigator.vibrate(100); 
             if (text.includes("[EXECUTE_LOCAL:")) {
                 let match = text.match(/\[EXECUTE_LOCAL:\s*(.*?)\]/);
                 if(match && match[1]) {
+                    let uri = match[1].trim();
                     statusEl.innerText = "Executing Local App Protocol...";
-                    window.location.href = match[1].trim(); 
+                    
+                    // Fallback: If she hallucinates a raw 'www' link, force it to secure HTTPS so the phone accepts it.
+                    if (uri.startsWith('www.')) {
+                        uri = 'https://' + uri;
+                    }
+                    
+                    // Force the mobile OS to rip open the application
+                    window.location.assign(uri); 
                 }
             }
         }
