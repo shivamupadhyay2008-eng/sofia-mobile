@@ -30,6 +30,7 @@
         const CLOUD_URL = "wss://sofia-mainframe.onrender.com/ws/sofia";
         let websocket;
         let recognition;
+        let serverTimeout; // The Dead-Man's Switch Timer
         const statusEl = document.getElementById('status');
         const transcriptEl = document.getElementById('transcript');
         const ringEl = document.getElementById('matrix-ring');
@@ -51,6 +52,9 @@
             };
             
             websocket.onmessage = (event) => {
+                // SERVER RESPONDED! Kill the dead-man's switch.
+                clearTimeout(serverTimeout);
+                
                 let responseText = event.data;
                 
                 if (responseText.includes("[EXECUTE_LOCAL:")) executeCommand(responseText);
@@ -116,10 +120,19 @@
             if(femaleVoice) utterance.voice = femaleVoice;
             utterance.rate = 1.05;
             utterance.pitch = 1.1; 
+            
             utterance.onend = () => {
                 statusEl.innerText = "Standing By"; 
                 startListening();
             };
+            
+            // --- THE CHROME BUG OVERRIDE ---
+            utterance.onerror = () => {
+                statusEl.innerText = "Standing By";
+                startListening();
+            };
+            window.speechSynthesisUtteranceHack = utterance; // Prevent garbage collection
+            
             window.speechSynthesis.speak(utterance);
         }
 
@@ -140,8 +153,19 @@
                 transcriptEl.innerText = "YOU: " + command;
                 statusEl.innerText = "Transmitting...";
                 ringEl.classList.remove('listening');
+                
                 if(websocket.readyState === WebSocket.OPEN) {
                     websocket.send("[AUTH: SHIVAM_PRIME] " + command);
+                    
+                    // --- THE DEAD-MAN'S SWITCH TIMER ---
+                    clearTimeout(serverTimeout);
+                    serverTimeout = setTimeout(() => {
+                        if (statusEl.innerText.includes("Transmitting")) {
+                            statusEl.innerText = "Standing By";
+                            transcriptEl.innerText = "SYSTEM: Cloud lag bypass engaged. Ready.";
+                            startListening();
+                        }
+                    }, 15000);
                 }
             };
             
