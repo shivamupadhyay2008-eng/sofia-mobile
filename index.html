@@ -149,7 +149,7 @@
                 if(websocket.readyState === WebSocket.OPEN) {
                     websocket.send(command); // No AUTH tag. Strictly guest.
                     
-                    // --- THE DEAD-MAN'S SWITCH TIMER ---
+                   // --- THE DEAD-MAN'S SWITCH TIMER ---
                     clearTimeout(serverTimeout);
                     serverTimeout = setTimeout(() => {
                         if (statusEl.innerText.includes("Transmitting")) {
@@ -157,7 +157,7 @@
                             transcriptEl.innerText = "SYSTEM: Cloud lag bypass engaged. Ready.";
                             startListening();
                         }
-                    }, 15000);
+                    }, 30000); // Increased to 30 seconds to allow complex scripts to generate
                 }
             };
             
