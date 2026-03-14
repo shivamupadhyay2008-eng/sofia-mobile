@@ -111,18 +111,28 @@
                 }
             }
         }
-
         function speakResponse(text) {
-            window.speechSynthesis.cancel();
+            window.speechSynthesis.cancel(); 
             const utterance = new SpeechSynthesisUtterance(text);
-            const voices = window.speechSynthesis.getVoices();
-            const femaleVoice = voices.find(v => v.name.toLowerCase().includes('female') || v.name.toLowerCase().includes('zira') || v.name.toLowerCase().includes('samantha'));
-            if(femaleVoice) utterance.voice = femaleVoice;
+            
+            // Wait slightly for voices to load on slower mobile OS
+            let voices = window.speechSynthesis.getVoices();
+            if (voices.length === 0) {
+                setTimeout(() => speakResponse(text), 100);
+                return;
+            }
+
+            // Fallback tree: Try premium female -> standard female -> any available voice
+            let selectedVoice = voices.find(v => v.name.toLowerCase().includes('zira') || v.name.toLowerCase().includes('samantha')) 
+                             || voices.find(v => v.name.toLowerCase().includes('female')) 
+                             || voices[0]; 
+            
+            if(selectedVoice) utterance.voice = selectedVoice;
             utterance.rate = 1.05;
             utterance.pitch = 1.1; 
             
             utterance.onend = () => {
-                statusEl.innerText = "Standing By"; 
+                statusEl.innerText = "Standing By";
                 startListening();
             };
             
