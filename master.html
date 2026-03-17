@@ -30,7 +30,7 @@
         const CLOUD_URL = "wss://sofia-mainframe.onrender.com/ws/sofia";
         let websocket;
         let recognition;
-        let serverTimeout; // The Dead-Man's Switch Timer
+        let serverTimeout; 
         const statusEl = document.getElementById('status');
         const transcriptEl = document.getElementById('transcript');
         const ringEl = document.getElementById('matrix-ring');
@@ -47,25 +47,34 @@
                 // --- THE J.A.R.V.I.S. WAKE PROTOCOL ---
                 setTimeout(() => {
                     let currentTime = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-                    websocket.send(`[AUTH: SHIVAM_PRIME] [WAKE_SEQUENCE] System boot sequence complete. The local time is ${currentTime}. Initiate the Prime Admin greeting protocol.`);
+                    websocket.send(`[AUTH: SHIVAM_PRIME] [WAKE_SEQUENCE] System boot sequence complete. The local time is ${currentTime}. Initiate the Prime Admin greeting protocol warmly.`);
                 }, 1000);
             };
             
             websocket.onmessage = (event) => {
-                // SERVER RESPONDED! Kill the dead-man's switch.
                 clearTimeout(serverTimeout);
-                
                 let responseText = event.data;
                 
                 if (responseText.includes("[EXECUTE_LOCAL:")) executeCommand(responseText);
-                
-                // --- THE SPATIAL AUDIO INTERCEPTOR ---
-                if (responseText.includes("[AUDIO_ROUTED]")) {
-                    let cleanText = responseText.replace("[AUDIO_ROUTED]", "").trim();
-                    transcriptEl.innerText = "SOFIA (PC AUDIO): " + cleanText;
-                    statusEl.innerText = "Standing By";
-                    startListening(); 
+               
+                // --- THE DIAGNOSTIC INTERCEPTOR (AUTO-CLIPBOARD) ---
+                if (responseText.includes("[DIAGNOSTIC_DUMP]")) {
+                    let dumpData = responseText.replace("[DIAGNOSTIC_DUMP]", "").trim();
+                    navigator.clipboard.writeText(dumpData).then(() => {
+                        statusEl.innerText = "DIAGNOSTIC COPIED";
+                        transcriptEl.innerText = "System log copied to clipboard. Paste to Architect.";
+                        if(navigator.vibrate) navigator.vibrate([200, 100, 200]); 
+                    }).catch(err => {
+                        transcriptEl.innerText = "Clipboard block. Check permissions.";
+                    });
+                    window.speechSynthesis.cancel();
+                    setTimeout(startListening, 3000);
                     return; 
+                }
+
+                // If AUDIO_ROUTED is here, we strip the tag, but let the mobile speak it too
+                if (responseText.includes("[AUDIO_ROUTED]")) {
+                    responseText = responseText.replace("[AUDIO_ROUTED]", "").trim();
                 }
                 
                 transcriptEl.innerText = "SOFIA: " + responseText.trim();
@@ -111,23 +120,20 @@
                 }
             }
         }
+
+        // --- THE SURGICALLY FIXED SPEECH ENGINE ---
         function speakResponse(text) {
             window.speechSynthesis.cancel(); 
             const utterance = new SpeechSynthesisUtterance(text);
             
-            // Wait slightly for voices to load on slower mobile OS
             let voices = window.speechSynthesis.getVoices();
-            if (voices.length === 0) {
-                setTimeout(() => speakResponse(text), 100);
-                return;
+            if (voices.length > 0) {
+                let selectedVoice = voices.find(v => v.name.toLowerCase().includes('zira') || v.name.toLowerCase().includes('samantha')) 
+                                 || voices.find(v => v.name.toLowerCase().includes('female')) 
+                                 || voices[0]; 
+                if(selectedVoice) utterance.voice = selectedVoice;
             }
-
-            // Fallback tree: Try premium female -> standard female -> any available voice
-            let selectedVoice = voices.find(v => v.name.toLowerCase().includes('zira') || v.name.toLowerCase().includes('samantha')) 
-                             || voices.find(v => v.name.toLowerCase().includes('female')) 
-                             || voices[0]; 
             
-            if(selectedVoice) utterance.voice = selectedVoice;
             utterance.rate = 1.05;
             utterance.pitch = 1.1; 
             
@@ -136,13 +142,12 @@
                 startListening();
             };
             
-            // --- THE CHROME BUG OVERRIDE ---
             utterance.onerror = () => {
                 statusEl.innerText = "Standing By";
                 startListening();
             };
-            window.speechSynthesisUtteranceHack = utterance; // Prevent garbage collection
             
+            window.speechSynthesisUtteranceHack = utterance; 
             window.speechSynthesis.speak(utterance);
         }
 
@@ -167,7 +172,6 @@
                 if(websocket.readyState === WebSocket.OPEN) {
                     websocket.send("[AUTH: SHIVAM_PRIME] " + command);
                     
-                    // --- THE DEAD-MAN'S SWITCH TIMER ---
                     clearTimeout(serverTimeout);
                     serverTimeout = setTimeout(() => {
                         if (statusEl.innerText.includes("Transmitting")) {
@@ -175,7 +179,7 @@
                             transcriptEl.innerText = "SYSTEM: Cloud lag bypass engaged. Ready.";
                             startListening();
                         }
-                    }, 30000); // Increased to 30 seconds to allow complex scripts to generate
+                    }, 30000); 
                 }
             };
             
