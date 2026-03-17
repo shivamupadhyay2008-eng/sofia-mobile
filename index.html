@@ -8,7 +8,7 @@
         body { background-color: #050505; color: #00ffff; font-family: 'Courier New', Courier, monospace; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; overflow: hidden; }
         #matrix-ring { width: 200px; height: 200px; border: 2px solid #00ffff; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 20px #00ffff; transition: all 0.3s ease; }
         .listening { box-shadow: 0 0 50px #00ffff, inset 0 0 30px #00ffff !important; transform: scale(1.05); }
-        #status { margin-top: 30px; font-size: 1.2rem; text-transform: uppercase; letter-spacing: 2px; }
+        #status { margin-top: 30px; font-size: 1.2rem; text-transform: uppercase; letter-spacing: 2px; text-align: center;}
         #transcript { margin-top: 20px; color: #aaaaaa; font-size: 0.9rem; text-align: center; max-width: 80%; height: 60px; overflow: hidden; }
         .mic-btn { background: transparent; color: #00ffff; border: 1px solid #00ffff; padding: 15px 30px; font-size: 1rem; text-transform: uppercase; margin-top: 40px; cursor: pointer; letter-spacing: 1px; }
         .mic-btn:hover { background: rgba(0, 255, 255, 0.1); }
@@ -18,8 +18,8 @@
 
     <div id="matrix-ring"><h2 id="core-text">SOFIA</h2></div>
     <div id="status">System Standby</div>
-    <div id="transcript">Awaiting neural link...</div>
-    <button class="mic-btn" onclick="manualEngage()">Engage Audio Matrix</button>
+    <div id="transcript">Awaiting boot sequence...</div>
+    <button id="main-btn" class="mic-btn" onclick="systemInit()">Initialize System</button>
 
     <script>
         const CLOUD_URL = "wss://sofia-mainframe.onrender.com/ws/sofia";
@@ -29,25 +29,21 @@
         const statusEl = document.getElementById('status');
         const transcriptEl = document.getElementById('transcript');
         const ringEl = document.getElementById('matrix-ring');
+        const mainBtn = document.getElementById('main-btn');
 
-        // --- STATE TRACKERS FOR CONTINUOUS BARGE-IN ---
-        let systemActive = false;
+        // --- STATE TRACKERS ---
+        let systemBooted = false;
         let isSpeaking = false;
         let isListening = false;
 
         function connectToBrain() {
-            statusEl.innerText = "Connecting to Cloud...";
+            statusEl.innerText = "Connecting to Cloud Server...";
             websocket = new WebSocket(CLOUD_URL);
             
             websocket.onopen = () => {
-                statusEl.innerText = "Neural Link Established";
+                statusEl.innerText = "Neural Link Established.\nTap 'Initialize System' to begin.";
                 if(navigator.vibrate) navigator.vibrate([50, 50, 50]); 
                 setInterval(() => { if(websocket.readyState === WebSocket.OPEN) websocket.send("[PING]"); }, 20000);
-                
-                setTimeout(() => {
-                    let currentTime = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-                    websocket.send(`[WAKE_SEQUENCE] A Phantom Node has connected. The local time is ${currentTime}. Greet the guest warmly, show your J.A.R.V.I.S. persona, and politely ask for their name.`);
-                }, 1000);
             };
             
             websocket.onmessage = (event) => {
@@ -67,6 +63,9 @@
                 
                 if(spokenText.length > 0) {
                     speakResponse(spokenText);
+                } else {
+                    statusEl.innerText = "Standing By";
+                    startListening();
                 }
             };
             
@@ -118,15 +117,19 @@
                 utterance.onstart = () => { 
                     isSpeaking = true; 
                     ringEl.classList.remove('listening');
+                    statusEl.innerText = "Sofia is speaking...";
                 };
 
                 utterance.onend = () => {
                     isSpeaking = false;
                     statusEl.innerText = "Standing By";
-                    if (systemActive) startListening();
+                    if (systemBooted) startListening();
                 };
                 
-                utterance.onerror = () => { isSpeaking = false; };
+                utterance.onerror = () => { 
+                    isSpeaking = false; 
+                    if (systemBooted) startListening();
+                };
                 
                 window.speechSynthesisUtteranceHack = utterance; 
                 window.speechSynthesis.speak(utterance);
@@ -138,7 +141,6 @@
             if (!SpeechRecognition) return null;
             const rec = new SpeechRecognition();
             
-            // --- THE J.A.R.V.I.S. UPGRADE: CONTINUOUS & INTERIM LISTENING ---
             rec.continuous = true; 
             rec.interimResults = true; 
             
@@ -154,25 +156,18 @@
                 let interimTranscript = '';
                 let finalTranscript = '';
 
-                // If she is talking, and you make a sound, KILL HER AUDIO INSTANTLY.
                 if (isSpeaking) {
                     window.speechSynthesis.cancel();
                     isSpeaking = false;
                     if(navigator.vibrate) navigator.vibrate(50);
-                    transcriptEl.innerText = "System interrupted. Listening...";
                 }
 
                 for (let i = event.resultIndex; i < event.results.length; ++i) {
-                    if (event.results[i].isFinal) {
-                        finalTranscript += event.results[i][0].transcript;
-                    } else {
-                        interimTranscript += event.results[i][0].transcript;
-                    }
+                    if (event.results[i].isFinal) finalTranscript += event.results[i][0].transcript;
+                    else interimTranscript += event.results[i][0].transcript;
                 }
 
-                if (interimTranscript) {
-                    transcriptEl.innerText = "HEARING: " + interimTranscript;
-                }
+                if (interimTranscript) transcriptEl.innerText = "HEARING: " + interimTranscript;
 
                 if (finalTranscript) {
                     const command = finalTranscript.toLowerCase().trim();
@@ -194,11 +189,9 @@
                         clearTimeout(serverTimeout);
                         serverTimeout = setTimeout(() => {
                             if (statusEl.innerText.includes("Transmitting")) {
-                                statusEl.innerText = "Standing By";
-                                transcriptEl.innerText = "SYSTEM: Cloud lag bypass engaged.";
-                                if (systemActive) startListening();
+                                statusEl.innerText = "Processing Complex Matrix... (Server Waking)";
                             }
-                        }, 30000); 
+                        }, 5000); 
                     }
                 }
             };
@@ -206,38 +199,40 @@
             rec.onerror = (e) => {
                 isListening = false;
                 ringEl.classList.remove('listening');
-                if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
-                    systemActive = false;
-                }
             };
             
             rec.onend = () => { 
                 isListening = false; 
-                // INFINITE LOOP: If the system is active and she isn't speaking, keep the mic open forever.
-                if (systemActive && !isSpeaking) {
-                    startListening();
+                if (systemBooted && !isSpeaking) {
+                    setTimeout(startListening, 100);
                 }
             };
             
             return rec;
         }
 
-        function manualEngage() {
-            if (!systemActive) {
+        function systemInit() {
+            if (!systemBooted) {
                 let silent = new SpeechSynthesisUtterance('');
                 silent.volume = 0;
                 window.speechSynthesis.speak(silent);
-                systemActive = true;
-                statusEl.innerText = "System Fully Armed";
-                startListening();
+                
+                systemBooted = true;
+                mainBtn.innerText = "Force Interrupt (Barge-In)";
+                
+                let currentTime = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                if(websocket.readyState === WebSocket.OPEN) {
+                    websocket.send(`[WAKE_SEQUENCE] A Phantom Node has connected. The local time is ${currentTime}. Greet the guest warmly, show your J.A.R.V.I.S. persona, and politely ask for their name.`);
+                }
             } else {
                 window.speechSynthesis.cancel();
                 isSpeaking = false;
+                startListening();
             }
         }
 
         function startListening() {
-            if (isListening) return; 
+            if (isListening || isSpeaking) return; 
             if (!recognition) recognition = initSpeech();
             if (recognition) { try { recognition.start(); } catch(e) {} }
         }

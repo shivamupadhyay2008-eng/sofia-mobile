@@ -8,7 +8,7 @@
         body { background-color: #050505; color: #ff003c; font-family: 'Courier New', Courier, monospace; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; overflow: hidden; }
         #matrix-ring { width: 200px; height: 200px; border: 2px solid #ff003c; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 20px #ff003c; transition: all 0.3s ease; }
         .listening { box-shadow: 0 0 50px #ff003c, inset 0 0 30px #ff003c !important; transform: scale(1.05); }
-        #status { margin-top: 30px; font-size: 1.2rem; text-transform: uppercase; letter-spacing: 2px; }
+        #status { margin-top: 30px; font-size: 1.2rem; text-transform: uppercase; letter-spacing: 2px; text-align: center; }
         #transcript { margin-top: 20px; color: #aaaaaa; font-size: 0.9rem; text-align: center; max-width: 80%; height: 60px; overflow: hidden; }
         .control-panel { display: flex; gap: 15px; margin-top: 40px; }
         .action-btn { background: transparent; color: #ff003c; border: 1px solid #ff003c; padding: 15px 20px; font-size: 0.9rem; text-transform: uppercase; cursor: pointer; letter-spacing: 1px; transition: 0.2s; }
@@ -19,11 +19,11 @@
 
     <div id="matrix-ring"><h2 id="core-text">MASTER</h2></div>
     <div id="status">System Standby</div>
-    <div id="transcript">Awaiting admin link...</div>
+    <div id="transcript">Awaiting boot sequence...</div>
     
     <div class="control-panel">
-        <button class="action-btn" onclick="manualEngage()">Engage Audio Matrix</button>
-        <button class="action-btn" onclick="syncClipboard()">Push Clipboard to PC</button>
+        <button id="main-btn" class="action-btn" onclick="systemInit()">Initialize System</button>
+        <button class="action-btn" onclick="syncClipboard()">Push Clipboard</button>
     </div>
 
     <script>
@@ -34,25 +34,21 @@
         const statusEl = document.getElementById('status');
         const transcriptEl = document.getElementById('transcript');
         const ringEl = document.getElementById('matrix-ring');
+        const mainBtn = document.getElementById('main-btn');
 
-        // --- STATE TRACKERS FOR CONTINUOUS BARGE-IN ---
-        let systemActive = false;
+        // --- STATE TRACKERS ---
+        let systemBooted = false;
         let isSpeaking = false;
         let isListening = false;
 
         function connectToBrain() {
-            statusEl.innerText = "Connecting to Cloud...";
+            statusEl.innerText = "Connecting to Cloud Server...";
             websocket = new WebSocket(CLOUD_URL);
             
             websocket.onopen = () => {
-                statusEl.innerText = "Admin Link Established";
+                statusEl.innerText = "Admin Link Established.\nTap 'Initialize System' to begin.";
                 if(navigator.vibrate) navigator.vibrate([100, 50, 100]); 
                 setInterval(() => { if(websocket.readyState === WebSocket.OPEN) websocket.send("[PING]"); }, 20000);
-                
-                setTimeout(() => {
-                    let currentTime = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-                    websocket.send(`[AUTH: SHIVAM_PRIME] [WAKE_SEQUENCE] System boot sequence complete. The local time is ${currentTime}. Initiate the Prime Admin greeting protocol warmly.`);
-                }, 1000);
             };
             
             websocket.onmessage = (event) => {
@@ -67,9 +63,7 @@
                         statusEl.innerText = "DIAGNOSTIC COPIED";
                         transcriptEl.innerText = "System log copied to clipboard.";
                         if(navigator.vibrate) navigator.vibrate([200, 100, 200]); 
-                    }).catch(err => {
-                        transcriptEl.innerText = "Clipboard block. Check permissions.";
-                    });
+                    }).catch(err => { transcriptEl.innerText = "Clipboard block. Check permissions."; });
                     if (isSpeaking) window.speechSynthesis.cancel();
                     return; 
                 }
@@ -85,6 +79,9 @@
                 
                 if(spokenText.length > 0) {
                     speakResponse(spokenText);
+                } else {
+                    statusEl.innerText = "Standing By";
+                    startListening();
                 }
             };
             
@@ -135,15 +132,20 @@
                 utterance.onstart = () => { 
                     isSpeaking = true; 
                     ringEl.classList.remove('listening');
+                    statusEl.innerText = "Sofia is speaking...";
                 };
 
+                // The exact millisecond she finishes, SNAP the mic open.
                 utterance.onend = () => {
                     isSpeaking = false;
                     statusEl.innerText = "Standing By";
-                    if (systemActive) startListening();
+                    if (systemBooted) startListening();
                 };
                 
-                utterance.onerror = () => { isSpeaking = false; };
+                utterance.onerror = () => { 
+                    isSpeaking = false; 
+                    if (systemBooted) startListening();
+                };
                 
                 window.speechSynthesisUtteranceHack = utterance; 
                 window.speechSynthesis.speak(utterance);
@@ -155,7 +157,6 @@
             if (!SpeechRecognition) return null;
             const rec = new SpeechRecognition();
             
-            // --- THE J.A.R.V.I.S. UPGRADE: CONTINUOUS & INTERIM LISTENING ---
             rec.continuous = true; 
             rec.interimResults = true; 
             
@@ -163,7 +164,7 @@
                 isListening = true;
                 if (!isSpeaking) {
                     ringEl.classList.add('listening');
-                    statusEl.innerText = "Matrix Listening...";
+                    statusEl.innerText = "Master Mic Active...";
                 }
             };
             
@@ -171,32 +172,26 @@
                 let interimTranscript = '';
                 let finalTranscript = '';
 
-                // If she is talking, and you make a sound, KILL HER AUDIO INSTANTLY.
+                // If the hardware glitches and she talks while you talk, stop her.
                 if (isSpeaking) {
                     window.speechSynthesis.cancel();
                     isSpeaking = false;
                     if(navigator.vibrate) navigator.vibrate(50);
-                    transcriptEl.innerText = "System interrupted. Listening...";
                 }
 
                 for (let i = event.resultIndex; i < event.results.length; ++i) {
-                    if (event.results[i].isFinal) {
-                        finalTranscript += event.results[i][0].transcript;
-                    } else {
-                        interimTranscript += event.results[i][0].transcript;
-                    }
+                    if (event.results[i].isFinal) finalTranscript += event.results[i][0].transcript;
+                    else interimTranscript += event.results[i][0].transcript;
                 }
 
-                if (interimTranscript) {
-                    transcriptEl.innerText = "HEARING: " + interimTranscript;
-                }
+                if (interimTranscript) transcriptEl.innerText = "HEARING: " + interimTranscript;
 
                 if (finalTranscript) {
                     const command = finalTranscript.toLowerCase().trim();
                     if(!command) return;
                     
                     transcriptEl.innerText = "YOU: " + command;
-                    statusEl.innerText = "Transmitting...";
+                    statusEl.innerText = "Transmitting to Cloud...";
                     ringEl.classList.remove('listening');
                     
                     if(websocket.readyState === WebSocket.OPEN) {
@@ -205,11 +200,9 @@
                         clearTimeout(serverTimeout);
                         serverTimeout = setTimeout(() => {
                             if (statusEl.innerText.includes("Transmitting")) {
-                                statusEl.innerText = "Standing By";
-                                transcriptEl.innerText = "SYSTEM: Cloud lag bypass engaged.";
-                                if (systemActive) startListening();
+                                statusEl.innerText = "Processing Complex Matrix... (Server Waking)";
                             }
-                        }, 30000); 
+                        }, 5000); 
                     }
                 }
             };
@@ -217,39 +210,46 @@
             rec.onerror = (e) => {
                 isListening = false;
                 ringEl.classList.remove('listening');
-                if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
-                    systemActive = false;
-                }
             };
             
+            // THE AGGRESSIVE RESTART LOOP: Never let the mic die while system is booted
             rec.onend = () => { 
                 isListening = false; 
-                // INFINITE LOOP: If the system is active and she isn't speaking, keep the mic open forever.
-                if (systemActive && !isSpeaking) {
-                    startListening();
+                if (systemBooted && !isSpeaking) {
+                    setTimeout(startListening, 100);
                 }
             };
             
             return rec;
         }
 
-        function manualEngage() {
-            if (!systemActive) {
+        // --- THE SYSTEM INIT & WAKE PROTOCOL ---
+        function systemInit() {
+            if (!systemBooted) {
+                // 1. Fire silent audio to bypass browser lock permanently
                 let silent = new SpeechSynthesisUtterance('');
                 silent.volume = 0;
                 window.speechSynthesis.speak(silent);
-                systemActive = true;
-                statusEl.innerText = "System Fully Armed";
-                startListening();
+                
+                // 2. Arm the system logic
+                systemBooted = true;
+                mainBtn.innerText = "Force Interrupt (Barge-In)";
+                
+                // 3. Send the Wake Protocol
+                let currentTime = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                if(websocket.readyState === WebSocket.OPEN) {
+                    websocket.send(`[AUTH: SHIVAM_PRIME] [WAKE_SEQUENCE] System boot sequence complete. The local time is ${currentTime}. Initiate the Prime Admin greeting protocol warmly.`);
+                }
             } else {
-                // Failsafe manual kill
+                // Manual Barge-In: If tapped again, it kills her current sentence instantly
                 window.speechSynthesis.cancel();
                 isSpeaking = false;
+                startListening();
             }
         }
 
         function startListening() {
-            if (isListening) return; 
+            if (isListening || isSpeaking) return; 
             if (!recognition) recognition = initSpeech();
             if (recognition) { try { recognition.start(); } catch(e) {} }
         }
