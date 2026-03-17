@@ -161,6 +161,11 @@
                 ringEl.classList.add('listening');
                 statusEl.innerText = "Master Mic Active...";
                 transcriptEl.innerText = "Listening...";
+                
+                // THE AUDIO UNLOCK HACK: Fire a silent utterance to bypass mobile auto-play blocks
+                let silentUtterance = new SpeechSynthesisUtterance('');
+                silentUtterance.volume = 0;
+                window.speechSynthesis.speak(silentUtterance);
             };
             
             rec.onresult = async (event) => {

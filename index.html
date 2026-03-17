@@ -140,6 +140,11 @@
                 ringEl.classList.add('listening');
                 statusEl.innerText = "Matrix Listening...";
                 transcriptEl.innerText = "Speak your command...";
+                
+                // THE AUDIO UNLOCK HACK: Fire a silent utterance to bypass mobile auto-play blocks
+                let silentUtterance = new SpeechSynthesisUtterance('');
+                silentUtterance.volume = 0;
+                window.speechSynthesis.speak(silentUtterance);
             };
             
             rec.onresult = async (event) => {
