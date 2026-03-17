@@ -22,7 +22,7 @@
     <div id="transcript">Awaiting admin link...</div>
     
     <div class="control-panel">
-        <button class="action-btn" onclick="startListening()">Engage Audio Matrix</button>
+        <button class="action-btn" onclick="manualEngage()">Engage Audio Matrix</button>
         <button class="action-btn" onclick="syncClipboard()">Push Clipboard to PC</button>
     </div>
 
@@ -35,6 +35,11 @@
         const transcriptEl = document.getElementById('transcript');
         const ringEl = document.getElementById('matrix-ring');
 
+        // --- STATE TRACKERS FOR CONTINUOUS BARGE-IN ---
+        let systemActive = false;
+        let isSpeaking = false;
+        let isListening = false;
+
         function connectToBrain() {
             statusEl.innerText = "Connecting to Cloud...";
             websocket = new WebSocket(CLOUD_URL);
@@ -44,7 +49,6 @@
                 if(navigator.vibrate) navigator.vibrate([100, 50, 100]); 
                 setInterval(() => { if(websocket.readyState === WebSocket.OPEN) websocket.send("[PING]"); }, 20000);
                 
-                // --- THE J.A.R.V.I.S. WAKE PROTOCOL ---
                 setTimeout(() => {
                     let currentTime = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
                     websocket.send(`[AUTH: SHIVAM_PRIME] [WAKE_SEQUENCE] System boot sequence complete. The local time is ${currentTime}. Initiate the Prime Admin greeting protocol warmly.`);
@@ -57,22 +61,19 @@
                 
                 if (responseText.includes("[EXECUTE_LOCAL:")) executeCommand(responseText);
                
-                // --- THE DIAGNOSTIC INTERCEPTOR (AUTO-CLIPBOARD) ---
                 if (responseText.includes("[DIAGNOSTIC_DUMP]")) {
                     let dumpData = responseText.replace("[DIAGNOSTIC_DUMP]", "").trim();
                     navigator.clipboard.writeText(dumpData).then(() => {
                         statusEl.innerText = "DIAGNOSTIC COPIED";
-                        transcriptEl.innerText = "System log copied to clipboard. Paste to Architect.";
+                        transcriptEl.innerText = "System log copied to clipboard.";
                         if(navigator.vibrate) navigator.vibrate([200, 100, 200]); 
                     }).catch(err => {
                         transcriptEl.innerText = "Clipboard block. Check permissions.";
                     });
-                    window.speechSynthesis.cancel();
-                    setTimeout(startListening, 3000);
+                    if (isSpeaking) window.speechSynthesis.cancel();
                     return; 
                 }
 
-                // If AUDIO_ROUTED is here, we strip the tag, but let the mobile speak it too
                 if (responseText.includes("[AUDIO_ROUTED]")) {
                     responseText = responseText.replace("[AUDIO_ROUTED]", "").trim();
                 }
@@ -84,9 +85,6 @@
                 
                 if(spokenText.length > 0) {
                     speakResponse(spokenText);
-                } else {
-                    statusEl.innerText = "Standing By"; 
-                    startListening(); 
                 }
             };
             
@@ -101,13 +99,10 @@
                 const text = await navigator.clipboard.readText();
                 if (text && websocket.readyState === WebSocket.OPEN) {
                     statusEl.innerText = "Beaming Clipboard to PC...";
-                    transcriptEl.innerText = "PAYLOAD: " + text.substring(0, 30) + "...";
                     websocket.send(`[AUTH: SHIVAM_PRIME] [CLIPBOARD_SYNC] ${text}`);
                     if(navigator.vibrate) navigator.vibrate(50);
                 }
-            } catch (err) {
-                transcriptEl.innerText = "Error: Clipboard access denied by mobile browser.";
-            }
+            } catch (err) {}
         }
 
         function executeCommand(text) {
@@ -115,90 +110,148 @@
             if (text.includes("[EXECUTE_LOCAL:")) {
                 let match = text.match(/\[EXECUTE_LOCAL:\s*(.*?)\]/);
                 if(match && match[1]) {
-                    statusEl.innerText = "Executing Local App Protocol...";
                     window.location.href = match[1].trim(); 
                 }
             }
         }
 
-        // --- THE SURGICALLY FIXED SPEECH ENGINE ---
         function speakResponse(text) {
             window.speechSynthesis.cancel(); 
-            const utterance = new SpeechSynthesisUtterance(text);
             
-            let voices = window.speechSynthesis.getVoices();
-            if (voices.length > 0) {
-                let selectedVoice = voices.find(v => v.name.toLowerCase().includes('zira') || v.name.toLowerCase().includes('samantha')) 
-                                 || voices.find(v => v.name.toLowerCase().includes('female')) 
-                                 || voices[0]; 
-                if(selectedVoice) utterance.voice = selectedVoice;
-            }
-            
-            utterance.rate = 1.05;
-            utterance.pitch = 1.1; 
-            
-            utterance.onend = () => {
-                statusEl.innerText = "Standing By";
-                startListening();
-            };
-            
-            utterance.onerror = () => {
-                statusEl.innerText = "Standing By";
-                startListening();
-            };
-            
-            window.speechSynthesisUtteranceHack = utterance; 
-            window.speechSynthesis.speak(utterance);
+            setTimeout(() => {
+                const utterance = new SpeechSynthesisUtterance(text);
+                
+                let voices = window.speechSynthesis.getVoices();
+                if (voices.length > 0) {
+                    let selectedVoice = voices.find(v => v.name.toLowerCase().includes('zira') || v.name.toLowerCase().includes('samantha')) 
+                                     || voices.find(v => v.name.toLowerCase().includes('female')) 
+                                     || voices[0]; 
+                    if(selectedVoice) utterance.voice = selectedVoice;
+                }
+                
+                utterance.rate = 1.05;
+                utterance.pitch = 1.1; 
+                
+                utterance.onstart = () => { 
+                    isSpeaking = true; 
+                    ringEl.classList.remove('listening');
+                };
+
+                utterance.onend = () => {
+                    isSpeaking = false;
+                    statusEl.innerText = "Standing By";
+                    if (systemActive) startListening();
+                };
+                
+                utterance.onerror = () => { isSpeaking = false; };
+                
+                window.speechSynthesisUtteranceHack = utterance; 
+                window.speechSynthesis.speak(utterance);
+            }, 100);
         }
 
         function initSpeech() {
             const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
             if (!SpeechRecognition) return null;
             const rec = new SpeechRecognition();
-            rec.continuous = false;
+            
+            // --- THE J.A.R.V.I.S. UPGRADE: CONTINUOUS & INTERIM LISTENING ---
+            rec.continuous = true; 
+            rec.interimResults = true; 
             
             rec.onstart = () => {
-                ringEl.classList.add('listening');
-                statusEl.innerText = "Master Mic Active...";
-                transcriptEl.innerText = "Listening...";
-                
-                // THE AUDIO UNLOCK HACK: Fire a silent utterance to bypass mobile auto-play blocks
-                let silentUtterance = new SpeechSynthesisUtterance('');
-                silentUtterance.volume = 0;
-                window.speechSynthesis.speak(silentUtterance);
-            };
-            
-            rec.onresult = async (event) => {
-                const command = event.results[0][0].transcript.toLowerCase();
-                transcriptEl.innerText = "YOU: " + command;
-                statusEl.innerText = "Transmitting...";
-                ringEl.classList.remove('listening');
-                
-                if(websocket.readyState === WebSocket.OPEN) {
-                    websocket.send("[AUTH: SHIVAM_PRIME] " + command);
-                    
-                    clearTimeout(serverTimeout);
-                    serverTimeout = setTimeout(() => {
-                        if (statusEl.innerText.includes("Transmitting")) {
-                            statusEl.innerText = "Standing By";
-                            transcriptEl.innerText = "SYSTEM: Cloud lag bypass engaged. Ready.";
-                            startListening();
-                        }
-                    }, 30000); 
+                isListening = true;
+                if (!isSpeaking) {
+                    ringEl.classList.add('listening');
+                    statusEl.innerText = "Matrix Listening...";
                 }
             };
             
-            rec.onerror = () => {
-                ringEl.classList.remove('listening');
-                statusEl.innerText = "Standing By";
+            rec.onresult = async (event) => {
+                let interimTranscript = '';
+                let finalTranscript = '';
+
+                // If she is talking, and you make a sound, KILL HER AUDIO INSTANTLY.
+                if (isSpeaking) {
+                    window.speechSynthesis.cancel();
+                    isSpeaking = false;
+                    if(navigator.vibrate) navigator.vibrate(50);
+                    transcriptEl.innerText = "System interrupted. Listening...";
+                }
+
+                for (let i = event.resultIndex; i < event.results.length; ++i) {
+                    if (event.results[i].isFinal) {
+                        finalTranscript += event.results[i][0].transcript;
+                    } else {
+                        interimTranscript += event.results[i][0].transcript;
+                    }
+                }
+
+                if (interimTranscript) {
+                    transcriptEl.innerText = "HEARING: " + interimTranscript;
+                }
+
+                if (finalTranscript) {
+                    const command = finalTranscript.toLowerCase().trim();
+                    if(!command) return;
+                    
+                    transcriptEl.innerText = "YOU: " + command;
+                    statusEl.innerText = "Transmitting...";
+                    ringEl.classList.remove('listening');
+                    
+                    if(websocket.readyState === WebSocket.OPEN) {
+                        websocket.send("[AUTH: SHIVAM_PRIME] " + command);
+                        
+                        clearTimeout(serverTimeout);
+                        serverTimeout = setTimeout(() => {
+                            if (statusEl.innerText.includes("Transmitting")) {
+                                statusEl.innerText = "Standing By";
+                                transcriptEl.innerText = "SYSTEM: Cloud lag bypass engaged.";
+                                if (systemActive) startListening();
+                            }
+                        }, 30000); 
+                    }
+                }
             };
+            
+            rec.onerror = (e) => {
+                isListening = false;
+                ringEl.classList.remove('listening');
+                if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+                    systemActive = false;
+                }
+            };
+            
+            rec.onend = () => { 
+                isListening = false; 
+                // INFINITE LOOP: If the system is active and she isn't speaking, keep the mic open forever.
+                if (systemActive && !isSpeaking) {
+                    startListening();
+                }
+            };
+            
             return rec;
         }
 
+        function manualEngage() {
+            if (!systemActive) {
+                let silent = new SpeechSynthesisUtterance('');
+                silent.volume = 0;
+                window.speechSynthesis.speak(silent);
+                systemActive = true;
+                statusEl.innerText = "System Fully Armed";
+                startListening();
+            } else {
+                // Failsafe manual kill
+                window.speechSynthesis.cancel();
+                isSpeaking = false;
+            }
+        }
+
         function startListening() {
-            window.speechSynthesis.cancel(); 
-            if(!recognition) recognition = initSpeech();
-            if(recognition) { try { recognition.start(); } catch(e) {} }
+            if (isListening) return; 
+            if (!recognition) recognition = initSpeech();
+            if (recognition) { try { recognition.start(); } catch(e) {} }
         }
 
         window.onload = () => { window.speechSynthesis.getVoices(); connectToBrain(); };

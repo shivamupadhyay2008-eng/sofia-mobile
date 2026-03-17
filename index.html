@@ -19,7 +19,7 @@
     <div id="matrix-ring"><h2 id="core-text">SOFIA</h2></div>
     <div id="status">System Standby</div>
     <div id="transcript">Awaiting neural link...</div>
-    <button class="mic-btn" onclick="startListening()">Engage Audio Matrix</button>
+    <button class="mic-btn" onclick="manualEngage()">Engage Audio Matrix</button>
 
     <script>
         const CLOUD_URL = "wss://sofia-mainframe.onrender.com/ws/sofia";
@@ -30,6 +30,11 @@
         const transcriptEl = document.getElementById('transcript');
         const ringEl = document.getElementById('matrix-ring');
 
+        // --- STATE TRACKERS FOR CONTINUOUS BARGE-IN ---
+        let systemActive = false;
+        let isSpeaking = false;
+        let isListening = false;
+
         function connectToBrain() {
             statusEl.innerText = "Connecting to Cloud...";
             websocket = new WebSocket(CLOUD_URL);
@@ -39,7 +44,6 @@
                 if(navigator.vibrate) navigator.vibrate([50, 50, 50]); 
                 setInterval(() => { if(websocket.readyState === WebSocket.OPEN) websocket.send("[PING]"); }, 20000);
                 
-                // --- THE GUEST WAKE PROTOCOL ---
                 setTimeout(() => {
                     let currentTime = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
                     websocket.send(`[WAKE_SEQUENCE] A Phantom Node has connected. The local time is ${currentTime}. Greet the guest warmly, show your J.A.R.V.I.S. persona, and politely ask for their name.`);
@@ -52,7 +56,6 @@
                 
                 if (responseText.includes("[EXECUTE_LOCAL:")) executeCommand(responseText);
 
-                // Ensure the phone speaks routed audio if looking at the screen
                 if (responseText.includes("[AUDIO_ROUTED]")) {
                     responseText = responseText.replace("[AUDIO_ROUTED]", "").trim();
                 }
@@ -64,9 +67,6 @@
                 
                 if(spokenText.length > 0) {
                     speakResponse(spokenText);
-                } else {
-                    statusEl.innerText = "Standing By"; 
-                    startListening(); 
                 }
             };
             
@@ -82,7 +82,6 @@
                 let match = text.match(/\[EXECUTE_LOCAL:\s*(.*?)\]/);
                 if(match && match[1]) {
                     let uri = match[1].trim();
-                    statusEl.innerText = "Executing Local App Protocol...";
                     if (uri.startsWith('www.')) uri = 'https://' + uri;
                     window.location.assign(uri); 
                 }
@@ -99,92 +98,148 @@
             return "I do not have access to the battery telemetry on this device.";
         }
 
-        // --- THE SURGICALLY FIXED SPEECH ENGINE ---
         function speakResponse(text) {
             window.speechSynthesis.cancel(); 
-            const utterance = new SpeechSynthesisUtterance(text);
             
-            let voices = window.speechSynthesis.getVoices();
-            // If voices are available, assign the best one. Otherwise, it defaults automatically without looping/crashing.
-            if (voices.length > 0) {
-                let selectedVoice = voices.find(v => v.name.toLowerCase().includes('zira') || v.name.toLowerCase().includes('samantha')) 
-                                 || voices.find(v => v.name.toLowerCase().includes('female')) 
-                                 || voices[0]; 
-                if(selectedVoice) utterance.voice = selectedVoice;
-            }
-            
-            utterance.rate = 1.05;
-            utterance.pitch = 1.1; 
-            
-            utterance.onend = () => {
-                statusEl.innerText = "Standing By";
-                startListening();
-            };
-            
-            utterance.onerror = () => {
-                statusEl.innerText = "Standing By";
-                startListening();
-            };
-            
-            window.speechSynthesisUtteranceHack = utterance; 
-            window.speechSynthesis.speak(utterance);
+            setTimeout(() => {
+                const utterance = new SpeechSynthesisUtterance(text);
+                
+                let voices = window.speechSynthesis.getVoices();
+                if (voices.length > 0) {
+                    let selectedVoice = voices.find(v => v.name.toLowerCase().includes('zira') || v.name.toLowerCase().includes('samantha')) 
+                                     || voices.find(v => v.name.toLowerCase().includes('female')) 
+                                     || voices[0]; 
+                    if(selectedVoice) utterance.voice = selectedVoice;
+                }
+                
+                utterance.rate = 1.05;
+                utterance.pitch = 1.1; 
+                
+                utterance.onstart = () => { 
+                    isSpeaking = true; 
+                    ringEl.classList.remove('listening');
+                };
+
+                utterance.onend = () => {
+                    isSpeaking = false;
+                    statusEl.innerText = "Standing By";
+                    if (systemActive) startListening();
+                };
+                
+                utterance.onerror = () => { isSpeaking = false; };
+                
+                window.speechSynthesisUtteranceHack = utterance; 
+                window.speechSynthesis.speak(utterance);
+            }, 100);
         }
 
         function initSpeech() {
             const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
             if (!SpeechRecognition) return null;
             const rec = new SpeechRecognition();
-            rec.continuous = false;
+            
+            // --- THE J.A.R.V.I.S. UPGRADE: CONTINUOUS & INTERIM LISTENING ---
+            rec.continuous = true; 
+            rec.interimResults = true; 
             
             rec.onstart = () => {
-                ringEl.classList.add('listening');
-                statusEl.innerText = "Matrix Listening...";
-                transcriptEl.innerText = "Speak your command...";
-                
-                // THE AUDIO UNLOCK HACK: Fire a silent utterance to bypass mobile auto-play blocks
-                let silentUtterance = new SpeechSynthesisUtterance('');
-                silentUtterance.volume = 0;
-                window.speechSynthesis.speak(silentUtterance);
+                isListening = true;
+                if (!isSpeaking) {
+                    ringEl.classList.add('listening');
+                    statusEl.innerText = "Matrix Listening...";
+                }
             };
             
             rec.onresult = async (event) => {
-                const command = event.results[0][0].transcript.toLowerCase();
-                transcriptEl.innerText = "YOU: " + command;
-                statusEl.innerText = "Transmitting to Cloud...";
-                ringEl.classList.remove('listening');
-                
-                if (command.includes("battery") || command.includes("power level")) {
-                    let batStat = await getBatteryStatus();
-                    transcriptEl.innerText = "SOFIA: " + batStat;
-                    speakResponse(batStat);
-                    return; 
+                let interimTranscript = '';
+                let finalTranscript = '';
+
+                // If she is talking, and you make a sound, KILL HER AUDIO INSTANTLY.
+                if (isSpeaking) {
+                    window.speechSynthesis.cancel();
+                    isSpeaking = false;
+                    if(navigator.vibrate) navigator.vibrate(50);
+                    transcriptEl.innerText = "System interrupted. Listening...";
                 }
-                
-                if(websocket.readyState === WebSocket.OPEN) {
-                    websocket.send(command); 
+
+                for (let i = event.resultIndex; i < event.results.length; ++i) {
+                    if (event.results[i].isFinal) {
+                        finalTranscript += event.results[i][0].transcript;
+                    } else {
+                        interimTranscript += event.results[i][0].transcript;
+                    }
+                }
+
+                if (interimTranscript) {
+                    transcriptEl.innerText = "HEARING: " + interimTranscript;
+                }
+
+                if (finalTranscript) {
+                    const command = finalTranscript.toLowerCase().trim();
+                    if(!command) return;
                     
-                    clearTimeout(serverTimeout);
-                    serverTimeout = setTimeout(() => {
-                        if (statusEl.innerText.includes("Transmitting")) {
-                            statusEl.innerText = "Standing By";
-                            transcriptEl.innerText = "SYSTEM: Cloud lag bypass engaged. Ready.";
-                            startListening();
-                        }
-                    }, 30000); 
+                    if (command.includes("battery") || command.includes("power level")) {
+                        let batStat = await getBatteryStatus();
+                        speakResponse(batStat);
+                        return; 
+                    }
+                    
+                    transcriptEl.innerText = "YOU: " + command;
+                    statusEl.innerText = "Transmitting to Cloud...";
+                    ringEl.classList.remove('listening');
+                    
+                    if(websocket.readyState === WebSocket.OPEN) {
+                        websocket.send(command); 
+                        
+                        clearTimeout(serverTimeout);
+                        serverTimeout = setTimeout(() => {
+                            if (statusEl.innerText.includes("Transmitting")) {
+                                statusEl.innerText = "Standing By";
+                                transcriptEl.innerText = "SYSTEM: Cloud lag bypass engaged.";
+                                if (systemActive) startListening();
+                            }
+                        }, 30000); 
+                    }
                 }
             };
             
-            rec.onerror = () => {
+            rec.onerror = (e) => {
+                isListening = false;
                 ringEl.classList.remove('listening');
-                statusEl.innerText = "Standing By";
+                if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+                    systemActive = false;
+                }
             };
+            
+            rec.onend = () => { 
+                isListening = false; 
+                // INFINITE LOOP: If the system is active and she isn't speaking, keep the mic open forever.
+                if (systemActive && !isSpeaking) {
+                    startListening();
+                }
+            };
+            
             return rec;
         }
 
+        function manualEngage() {
+            if (!systemActive) {
+                let silent = new SpeechSynthesisUtterance('');
+                silent.volume = 0;
+                window.speechSynthesis.speak(silent);
+                systemActive = true;
+                statusEl.innerText = "System Fully Armed";
+                startListening();
+            } else {
+                window.speechSynthesis.cancel();
+                isSpeaking = false;
+            }
+        }
+
         function startListening() {
-            window.speechSynthesis.cancel(); 
-            if(!recognition) recognition = initSpeech();
-            if(recognition) { try { recognition.start(); } catch(e) {} }
+            if (isListening) return; 
+            if (!recognition) recognition = initSpeech();
+            if (recognition) { try { recognition.start(); } catch(e) {} }
         }
 
         window.onload = () => { window.speechSynthesis.getVoices(); connectToBrain(); };
