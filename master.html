@@ -3,258 +3,530 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sofia | MASTER NODE</title>
+    <title>Sofia | Master Node</title>
+    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
     <style>
-        body { background-color: #050505; color: #ff003c; font-family: 'Courier New', Courier, monospace; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; overflow: hidden; }
-        #matrix-ring { width: 200px; height: 200px; border: 2px solid #ff003c; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 20px #ff003c; transition: all 0.3s ease; }
-        .listening { box-shadow: 0 0 50px #ff003c, inset 0 0 30px #ff003c !important; transform: scale(1.05); }
-        #status { margin-top: 30px; font-size: 1.2rem; text-transform: uppercase; letter-spacing: 2px; text-align: center; }
-        #transcript { margin-top: 20px; color: #aaaaaa; font-size: 0.9rem; text-align: center; max-width: 80%; height: 60px; overflow: hidden; }
-        .control-panel { display: flex; gap: 15px; margin-top: 40px; }
-        .action-btn { background: transparent; color: #ff003c; border: 1px solid #ff003c; padding: 15px 20px; font-size: 0.9rem; text-transform: uppercase; cursor: pointer; letter-spacing: 1px; transition: 0.2s; }
-        .action-btn:hover { background: rgba(255, 0, 60, 0.1); }
+        :root {
+            --red: #ff003c;
+            --red-dim: rgba(255,0,60,0.15);
+            --red-glow: 0 0 20px rgba(255,0,60,0.6);
+            --bg: #040404;
+            --text: #ff003c;
+            --muted: #661122;
+            --panel: rgba(255,0,60,0.04);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Share Tech Mono', monospace;
+            min-height: 100vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* Matrix rain canvas */
+        #matrix-canvas {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            z-index: 0;
+            opacity: 0.12;
+        }
+
+        .ui-layer {
+            position: relative;
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+            max-width: 600px;
+            padding: 20px;
+        }
+
+        /* Orb */
+        .orb-wrap {
+            position: relative;
+            width: 180px;
+            height: 180px;
+            margin-bottom: 24px;
+        }
+
+        .orb {
+            width: 180px;
+            height: 180px;
+            border-radius: 50%;
+            border: 1.5px solid var(--red);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: var(--red-glow), inset 0 0 15px rgba(255,0,60,0.08);
+            transition: all 0.4s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .orb::before {
+            content: '';
+            position: absolute;
+            inset: -3px;
+            border-radius: 50%;
+            border: 1px solid rgba(255,0,60,0.3);
+        }
+
+        .orb::after {
+            content: '';
+            position: absolute;
+            inset: 10px;
+            border-radius: 50%;
+            border: 1px dashed rgba(255,0,60,0.15);
+            animation: spin 12s linear infinite;
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .orb.listening {
+            box-shadow: 0 0 60px rgba(255,0,60,0.8), 0 0 120px rgba(255,0,60,0.3), inset 0 0 40px rgba(255,0,60,0.2);
+            transform: scale(1.06);
+        }
+
+        .orb.speaking {
+            box-shadow: 0 0 40px rgba(255,80,80,0.9), inset 0 0 30px rgba(255,0,60,0.15);
+        }
+
+        .orb-label {
+            font-family: 'Orbitron', sans-serif;
+            font-weight: 900;
+            font-size: 1.1rem;
+            letter-spacing: 4px;
+            color: var(--red);
+            text-shadow: var(--red-glow);
+            z-index: 2;
+        }
+
+        /* Waveform bars */
+        #waveform {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 3px;
+            height: 40px;
+            margin-bottom: 16px;
+        }
+
+        .bar {
+            width: 3px;
+            height: 4px;
+            background: var(--red);
+            border-radius: 2px;
+            transition: height 0.1s ease;
+        }
+
+        .bar.active { animation: pulse-bar 0.6s ease infinite alternate; }
+
+        @keyframes pulse-bar {
+            from { height: 4px; }
+            to { height: 32px; }
+        }
+
+        /* Status */
+        #status {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 0.75rem;
+            letter-spacing: 3px;
+            text-transform: uppercase;
+            color: var(--red);
+            opacity: 0.9;
+            margin-bottom: 12px;
+            text-align: center;
+            min-height: 20px;
+        }
+
+        /* Conversation log */
+        #log {
+            width: 100%;
+            max-height: 200px;
+            overflow-y: auto;
+            border: 1px solid var(--muted);
+            background: var(--panel);
+            padding: 10px 14px;
+            margin-bottom: 16px;
+            font-size: 0.78rem;
+            line-height: 1.6;
+            scrollbar-width: thin;
+            scrollbar-color: var(--red) transparent;
+        }
+
+        #log::-webkit-scrollbar { width: 4px; }
+        #log::-webkit-scrollbar-thumb { background: var(--red); border-radius: 2px; }
+
+        .log-entry { margin-bottom: 6px; }
+        .log-entry.user { color: #ff6680; }
+        .log-entry.sofia { color: var(--red); opacity: 0.85; }
+        .log-entry span { opacity: 0.5; font-size: 0.7rem; margin-right: 6px; }
+
+        /* Buttons */
+        .btn-row {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .btn {
+            background: transparent;
+            color: var(--red);
+            border: 1px solid var(--red);
+            padding: 12px 20px;
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            cursor: pointer;
+            transition: all 0.2s;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: var(--red);
+            transform: translateY(100%);
+            transition: transform 0.2s;
+            z-index: -1;
+        }
+
+        .btn:hover::before { transform: translateY(0); }
+        .btn:hover { color: #000; }
+
+        .btn.primary { border-color: var(--red); box-shadow: var(--red-glow); }
+
+        /* Connection dot */
+        .conn-dot {
+            position: fixed;
+            top: 16px;
+            right: 20px;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #333;
+            z-index: 100;
+            transition: background 0.3s;
+        }
+        .conn-dot.online { background: var(--red); box-shadow: var(--red-glow); animation: blink 2s ease infinite; }
+        .conn-dot.offline { background: #555; }
+
+        @keyframes blink { 50% { opacity: 0.4; } }
+
+        /* Tag */
+        .node-tag {
+            position: fixed;
+            top: 12px;
+            left: 20px;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 0.6rem;
+            letter-spacing: 3px;
+            color: var(--muted);
+            z-index: 100;
+        }
     </style>
 </head>
 <body>
+    <canvas id="matrix-canvas"></canvas>
 
-    <div id="matrix-ring"><h2 id="core-text">MASTER</h2></div>
-    <div id="status">System Standby</div>
-    <div id="transcript">Awaiting boot sequence...</div>
-    
-    <div class="control-panel">
-        <button id="main-btn" class="action-btn" onclick="systemInit()">Initialize System</button>
-        <button class="action-btn" onclick="syncClipboard()">Push Clipboard</button>
+    <div class="node-tag">MASTER NODE // SHIVAM_PRIME</div>
+    <div class="conn-dot" id="conn-dot"></div>
+
+    <div class="ui-layer">
+        <div class="orb-wrap">
+            <div class="orb" id="orb">
+                <span class="orb-label">SOFIA</span>
+            </div>
+        </div>
+
+        <div id="waveform">
+            </div>
+
+        <div id="status">System Standby</div>
+
+        <div id="log">
+            <div class="log-entry sofia"><span>//</span>Awaiting boot sequence...</div>
+        </div>
+
+        <div class="btn-row">
+            <button id="init-btn" class="btn primary" onclick="systemInit()">Initialize</button>
+            <button class="btn" onclick="syncClipboard()">Push Clipboard</button>
+            <button class="btn" onclick="interrupt()">Interrupt</button>
+        </div>
     </div>
 
     <script>
         const CLOUD_URL = "wss://sofia-mainframe.onrender.com/ws/sofia";
-        let websocket;
-        let recognition;
-        let serverTimeout; 
+        let ws, recognition, serverTimeout;
         const statusEl = document.getElementById('status');
-        const transcriptEl = document.getElementById('transcript');
-        const ringEl = document.getElementById('matrix-ring');
-        const mainBtn = document.getElementById('main-btn');
+        const orbEl = document.getElementById('orb');
+        const logEl = document.getElementById('log');
+        const initBtn = document.getElementById('init-btn');
+        const connDot = document.getElementById('conn-dot');
 
-        // --- STATE TRACKERS ---
-        let systemBooted = false;
-        let isSpeaking = false;
-        let isListening = false;
+        let booted = false, speaking = false, listening = false;
 
-        function connectToBrain() {
-            statusEl.innerText = "Connecting to Cloud Server...";
-            websocket = new WebSocket(CLOUD_URL);
-            
-            websocket.onopen = () => {
-                statusEl.innerText = "Admin Link Established.\nTap 'Initialize System' to begin.";
-                if(navigator.vibrate) navigator.vibrate([100, 50, 100]); 
-                setInterval(() => { if(websocket.readyState === WebSocket.OPEN) websocket.send("[PING]"); }, 20000);
-            };
-            
-            websocket.onmessage = (event) => {
-                clearTimeout(serverTimeout);
-                let responseText = event.data;
-                
-                if (responseText.includes("[EXECUTE_LOCAL:")) executeCommand(responseText);
-               
-                if (responseText.includes("[DIAGNOSTIC_DUMP]")) {
-                    let dumpData = responseText.replace("[DIAGNOSTIC_DUMP]", "").trim();
-                    navigator.clipboard.writeText(dumpData).then(() => {
-                        statusEl.innerText = "DIAGNOSTIC COPIED";
-                        transcriptEl.innerText = "System log copied to clipboard.";
-                        if(navigator.vibrate) navigator.vibrate([200, 100, 200]); 
-                    }).catch(err => { transcriptEl.innerText = "Clipboard block. Check permissions."; });
-                    if (isSpeaking) window.speechSynthesis.cancel();
-                    return; 
-                }
+        // ── Matrix Rain ─────────────────────────────────────────────────
+        const canvas = document.getElementById('matrix-canvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        const cols = Math.floor(canvas.width / 16);
+        const drops = Array(cols).fill(1);
+        function drawMatrix() {
+            ctx.fillStyle = 'rgba(4,4,4,0.05)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#ff003c';
+            ctx.font = '13px Share Tech Mono';
+            for (let i = 0; i < drops.length; i++) {
+                const ch = Math.random() < 0.5
+                    ? String.fromCharCode(0x30A0 + Math.random() * 96)
+                    : String.fromCharCode(48 + Math.floor(Math.random() * 10));
+                ctx.fillText(ch, i * 16, drops[i] * 16);
+                if (drops[i] * 16 > canvas.height && Math.random() > 0.975) drops[i] = 0;
+                drops[i]++;
+            }
+        }
+        setInterval(drawMatrix, 55);
+        window.addEventListener('resize', () => {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        });
 
-                if (responseText.includes("[AUDIO_ROUTED]")) {
-                    responseText = responseText.replace("[AUDIO_ROUTED]", "").trim();
-                }
-                
-                transcriptEl.innerText = "SOFIA: " + responseText.trim();
-                
-                let spokenText = responseText.replace(/\[EXECUTE_PYTHON\][\s\S]*?\[\/EXECUTE_PYTHON\]/g, "");
-                spokenText = spokenText.replace(/\[.*?\]/g, "").trim();
-                
-                if(spokenText.length > 0) {
-                    speakResponse(spokenText);
-                } else {
-                    statusEl.innerText = "Standing By";
-                    startListening();
-                }
-            };
-            
-            websocket.onclose = () => {
-                statusEl.innerText = "Connection Lost. Retrying...";
-                setTimeout(connectToBrain, 3000);
-            };
+        // ── Waveform ─────────────────────────────────────────────────────
+        const waveEl = document.getElementById('waveform');
+        const NUM_BARS = 20;
+        for (let i = 0; i < NUM_BARS; i++) {
+            const b = document.createElement('div');
+            b.className = 'bar';
+            b.id = `bar-${i}`;
+            waveEl.appendChild(b);
         }
 
-        async function syncClipboard() {
-            try {
-                const text = await navigator.clipboard.readText();
-                if (text && websocket.readyState === WebSocket.OPEN) {
-                    statusEl.innerText = "Beaming Clipboard to PC...";
-                    websocket.send(`[AUTH: SHIVAM_PRIME] [CLIPBOARD_SYNC] ${text}`);
-                    if(navigator.vibrate) navigator.vibrate(50);
+        let waveInterval;
+        function startWave() {
+            clearInterval(waveInterval);
+            waveInterval = setInterval(() => {
+                for (let i = 0; i < NUM_BARS; i++) {
+                    const b = document.getElementById(`bar-${i}`);
+                    const h = 4 + Math.random() * 28;
+                    b.style.height = h + 'px';
+                    b.style.opacity = 0.4 + Math.random() * 0.6;
                 }
-            } catch (err) {}
+            }, 80);
         }
-
-        function executeCommand(text) {
-            if(navigator.vibrate) navigator.vibrate(100); 
-            if (text.includes("[EXECUTE_LOCAL:")) {
-                let match = text.match(/\[EXECUTE_LOCAL:\s*(.*?)\]/);
-                if(match && match[1]) {
-                    window.location.href = match[1].trim(); 
-                }
+        function stopWave() {
+            clearInterval(waveInterval);
+            for (let i = 0; i < NUM_BARS; i++) {
+                document.getElementById(`bar-${i}`).style.height = '4px';
             }
         }
 
-        function speakResponse(text) {
-            window.speechSynthesis.cancel(); 
-            
-            setTimeout(() => {
-                const utterance = new SpeechSynthesisUtterance(text);
-                
-                let voices = window.speechSynthesis.getVoices();
-                if (voices.length > 0) {
-                    let selectedVoice = voices.find(v => v.name.toLowerCase().includes('zira') || v.name.toLowerCase().includes('samantha')) 
-                                     || voices.find(v => v.name.toLowerCase().includes('female')) 
-                                     || voices[0]; 
-                    if(selectedVoice) utterance.voice = selectedVoice;
+        // ── Log helper ────────────────────────────────────────────────────
+        function addLog(text, who) {
+            const d = document.createElement('div');
+            d.className = `log-entry ${who}`;
+            const ts = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+            d.innerHTML = `<span>${ts}</span>${text.substring(0, 200)}`;
+            logEl.appendChild(d);
+            logEl.scrollTop = logEl.scrollHeight;
+            // Keep log from growing forever
+            while (logEl.children.length > 30) logEl.removeChild(logEl.firstChild);
+        }
+
+        // ── WebSocket ─────────────────────────────────────────────────────
+        function connect() {
+            statusEl.innerText = 'Connecting to mainframe...';
+            ws = new WebSocket(CLOUD_URL);
+
+            ws.onopen = () => {
+                connDot.className = 'conn-dot online';
+                statusEl.innerText = 'Admin link established';
+                if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+                setInterval(() => { if (ws.readyState === 1) ws.send('[PING]'); }, 20000);
+            };
+
+            ws.onmessage = (e) => {
+                clearTimeout(serverTimeout);
+                let text = e.data;
+
+                if (text.includes('[EXECUTE_LOCAL:')) executeLocal(text);
+                if (text.includes('[DIAGNOSTIC_DUMP]')) {
+                    const dump = text.replace('[DIAGNOSTIC_DUMP]', '').trim();
+                    navigator.clipboard.writeText(dump).catch(() => {});
+                    addLog('[Diagnostic dump copied to clipboard]', 'sofia');
+                    if (speaking) window.speechSynthesis.cancel();
+                    return;
                 }
-                
-                utterance.rate = 1.05;
-                utterance.pitch = 1.1; 
-                
-                utterance.onstart = () => { 
-                    isSpeaking = true; 
-                    ringEl.classList.remove('listening');
-                    statusEl.innerText = "Sofia is speaking...";
+                if (text.includes('[AUDIO_ROUTED]')) text = text.replace('[AUDIO_ROUTED]', '').trim();
+
+                let spoken = text.replace(/\[EXECUTE_PYTHON\][\s\S]*?\[\/EXECUTE_PYTHON\]/g, '');
+                spoken = spoken.replace(/\[.*?\]/g, '').trim();
+
+                addLog(spoken, 'sofia');
+
+                if (spoken.length > 0) speakResponse(spoken);
+                else { statusEl.innerText = 'Standing by'; startListening(); }
+            };
+
+            ws.onclose = () => {
+                connDot.className = 'conn-dot offline';
+                statusEl.innerText = 'Connection lost — retrying...';
+                setTimeout(connect, 3000);
+            };
+        }
+
+        // ── Execute local redirect ─────────────────────────────────────
+        function executeLocal(text) {
+            if (navigator.vibrate) navigator.vibrate(100);
+            const m = text.match(/\[EXECUTE_LOCAL:\s*(.*?)\]/);
+            if (m && m[1]) {
+                let uri = m[1].trim();
+                if (uri.startsWith('www.')) uri = 'https://' + uri;
+                window.location.assign(uri);
+            }
+        }
+
+        // ── TTS ────────────────────────────────────────────────────────
+        function speakResponse(text) {
+            window.speechSynthesis.cancel();
+            if (recognition && listening) { try { recognition.stop(); } catch(e) {} }
+
+            setTimeout(() => {
+                const utt = new SpeechSynthesisUtterance(text);
+                const voices = window.speechSynthesis.getVoices();
+                if (voices.length) {
+                    const v = voices.find(v => v.name.toLowerCase().includes('zira'))
+                           || voices.find(v => v.name.toLowerCase().includes('samantha'))
+                           || voices.find(v => v.lang.startsWith('en') && v.name.toLowerCase().includes('female'))
+                           || voices.find(v => v.lang.startsWith('en'))
+                           || voices[0];
+                    if (v) utt.voice = v;
+                }
+                utt.rate = 1.05; utt.pitch = 1.08;
+
+                utt.onstart = () => {
+                    speaking = true; listening = false;
+                    orbEl.className = 'orb speaking';
+                    statusEl.innerText = 'Sofia is speaking...';
+                    startWave();
+                };
+                utt.onend = () => {
+                    speaking = false;
+                    orbEl.className = 'orb';
+                    statusEl.innerText = 'Standing by';
+                    stopWave();
+                    if (booted) setTimeout(startListening, 200);
+                };
+                utt.onerror = () => {
+                    speaking = false; stopWave();
+                    if (booted) setTimeout(startListening, 200);
                 };
 
-                // The exact millisecond she finishes, SNAP the mic open.
-                utterance.onend = () => {
-                    isSpeaking = false;
-                    statusEl.innerText = "Standing By";
-                    if (systemBooted) startListening();
-                };
-                
-                utterance.onerror = () => { 
-                    isSpeaking = false; 
-                    if (systemBooted) startListening();
-                };
-                
-                window.speechSynthesisUtteranceHack = utterance; 
-                window.speechSynthesis.speak(utterance);
+                window._sofiaUtt = utt;
+                window.speechSynthesis.speak(utt);
             }, 100);
         }
 
+        // ── Speech recognition ────────────────────────────────────────
         function initSpeech() {
-            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-            if (!SpeechRecognition) return null;
-            const rec = new SpeechRecognition();
-            
-            rec.continuous = true; 
-            rec.interimResults = true; 
-            
+            const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (!SR) return null;
+            const rec = new SR();
+            rec.continuous = false;  // Single-shot per turn (more reliable on mobile)
+            rec.interimResults = false;
+            rec.lang = 'en-IN';
+
             rec.onstart = () => {
-                isListening = true;
-                if (!isSpeaking) {
-                    ringEl.classList.add('listening');
-                    statusEl.innerText = "Master Mic Active...";
+                listening = true;
+                orbEl.className = 'orb listening';
+                statusEl.innerText = 'Master mic active...';
+            };
+
+            rec.onresult = async (e) => {
+                const cmd = e.results[0][0].transcript.toLowerCase().trim();
+                if (!cmd) return;
+                addLog(cmd, 'user');
+                statusEl.innerText = 'Transmitting...';
+                orbEl.className = 'orb';
+                if (ws.readyState === 1) {
+                    ws.send('[AUTH: SHIVAM_PRIME] ' + cmd);
+                    serverTimeout = setTimeout(() => {
+                        if (statusEl.innerText.includes('Transmitting'))
+                            statusEl.innerText = 'Processing... (server waking)';
+                    }, 5000);
                 }
             };
-            
-            rec.onresult = async (event) => {
-                let interimTranscript = '';
-                let finalTranscript = '';
 
-                // If the hardware glitches and she talks while you talk, stop her.
-                if (isSpeaking) {
-                    window.speechSynthesis.cancel();
-                    isSpeaking = false;
-                    if(navigator.vibrate) navigator.vibrate(50);
-                }
-
-                for (let i = event.resultIndex; i < event.results.length; ++i) {
-                    if (event.results[i].isFinal) finalTranscript += event.results[i][0].transcript;
-                    else interimTranscript += event.results[i][0].transcript;
-                }
-
-                if (interimTranscript) transcriptEl.innerText = "HEARING: " + interimTranscript;
-
-                if (finalTranscript) {
-                    const command = finalTranscript.toLowerCase().trim();
-                    if(!command) return;
-                    
-                    transcriptEl.innerText = "YOU: " + command;
-                    statusEl.innerText = "Transmitting to Cloud...";
-                    ringEl.classList.remove('listening');
-                    
-                    if(websocket.readyState === WebSocket.OPEN) {
-                        websocket.send("[AUTH: SHIVAM_PRIME] " + command);
-                        
-                        clearTimeout(serverTimeout);
-                        serverTimeout = setTimeout(() => {
-                            if (statusEl.innerText.includes("Transmitting")) {
-                                statusEl.innerText = "Processing Complex Matrix... (Server Waking)";
-                            }
-                        }, 5000); 
-                    }
-                }
+            rec.onerror = () => { listening = false; orbEl.className = 'orb'; };
+            rec.onend = () => {
+                listening = false;
+                if (booted && !speaking) setTimeout(startListening, 200);
             };
-            
-            rec.onerror = (e) => {
-                isListening = false;
-                ringEl.classList.remove('listening');
-            };
-            
-            // THE AGGRESSIVE RESTART LOOP: Never let the mic die while system is booted
-            rec.onend = () => { 
-                isListening = false; 
-                if (systemBooted && !isSpeaking) {
-                    setTimeout(startListening, 100);
-                }
-            };
-            
             return rec;
         }
 
-        // --- THE SYSTEM INIT & WAKE PROTOCOL ---
-        function systemInit() {
-            if (!systemBooted) {
-                // 1. Fire silent audio to bypass browser lock permanently
-                let silent = new SpeechSynthesisUtterance('');
-                silent.volume = 0;
-                window.speechSynthesis.speak(silent);
-                
-                // 2. Arm the system logic
-                systemBooted = true;
-                mainBtn.innerText = "Force Interrupt (Barge-In)";
-                
-                // 3. Send the Wake Protocol
-                let currentTime = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-                if(websocket.readyState === WebSocket.OPEN) {
-                    websocket.send(`[AUTH: SHIVAM_PRIME] [WAKE_SEQUENCE] System boot sequence complete. The local time is ${currentTime}. Initiate the Prime Admin greeting protocol warmly.`);
-                }
-            } else {
-                // Manual Barge-In: If tapped again, it kills her current sentence instantly
-                window.speechSynthesis.cancel();
-                isSpeaking = false;
-                startListening();
-            }
-        }
-
         function startListening() {
-            if (isListening || isSpeaking) return; 
+            if (listening || speaking) return;
             if (!recognition) recognition = initSpeech();
             if (recognition) { try { recognition.start(); } catch(e) {} }
         }
 
-        window.onload = () => { window.speechSynthesis.getVoices(); connectToBrain(); };
+        // ── Clipboard sync ────────────────────────────────────────────
+        async function syncClipboard() {
+            try {
+                const text = await navigator.clipboard.readText();
+                if (text && ws.readyState === 1) {
+                    statusEl.innerText = 'Beaming clipboard to PC...';
+                    ws.send('[AUTH: SHIVAM_PRIME] [CLIPBOARD_SYNC] ' + text);
+                    if (navigator.vibrate) navigator.vibrate(50);
+                }
+            } catch(e) {
+                statusEl.innerText = 'Clipboard access denied';
+            }
+        }
+
+        // ── Interrupt ─────────────────────────────────────────────────
+        function interrupt() {
+            window.speechSynthesis.cancel();
+            speaking = false; stopWave();
+            orbEl.className = 'orb';
+            if (navigator.vibrate) navigator.vibrate(50);
+            setTimeout(startListening, 200);
+        }
+
+        // ── Boot ──────────────────────────────────────────────────────
+        function systemInit() {
+            if (!booted) {
+                window.speechSynthesis.speak(Object.assign(new SpeechSynthesisUtterance(''), { volume: 0 }));
+                booted = true;
+                initBtn.innerText = 'Force Listen';
+                const t = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                if (ws.readyState === 1) {
+                    ws.send(`[AUTH: SHIVAM_PRIME] [WAKE_SEQUENCE] System boot complete. Time is ${t}. Initiate Prime Admin greeting protocol warmly.`);
+                }
+            } else {
+                interrupt();
+            }
+        }
+
+        window.onload = () => {
+            window.speechSynthesis.getVoices();
+            connect();
+        };
     </script>
 </body>
 </html>
